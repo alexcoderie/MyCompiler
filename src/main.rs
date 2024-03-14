@@ -1,6 +1,13 @@
+use crate::lexer::lexer::Lexer;
+
 pub mod token;
-mod lexer;
+pub mod lexer;
 
 fn main() {
-    println!("Hello, world!");
+    let input = "xffxffx";
+
+    let mut lexer = Lexer::new(input.to_string());
+
+    let token = lexer.next_token();
+    println!("{:?}", token);
 }

@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     //identifiers
     ID,
@@ -43,13 +44,16 @@ pub enum TokenType {
     LESSEQ,
     GREATER,
     GREATEREQ,
+    ILLEGAL,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub r#type: TokenType,
     pub literal: String,
     pub line: i32,
-    pub collumn: i32,
+    pub column: i32,
+
 }
 
 pub fn lookup_identifier(identifier: &str) -> TokenType {
