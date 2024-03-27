@@ -45,6 +45,7 @@ pub enum TokenType {
     GREATER,
     GREATEREQ,
     ILLEGAL,
+    EOF,
 }
 
 #[derive(Debug, PartialEq)]
