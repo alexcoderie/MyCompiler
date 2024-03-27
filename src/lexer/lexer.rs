@@ -1,5 +1,4 @@
-use std::fmt::format;
-use std::ptr::null;
+use std::fmt::Pointer;
 
 use crate::token::token;
 use crate::token::token::{Token, TokenType};
@@ -11,6 +10,7 @@ pub struct Lexer {
     ch: char,
     line: i32,
     column: i32,
+    block_comment: bool,
 }
 
 impl Lexer {
@@ -20,16 +20,31 @@ impl Lexer {
             position: 0,
             read_position: 0,
             ch: '\0',
-            line: 1,
-            column: 1,
+            line: 0,
+            column: 0,
+            block_comment: false,
         };
 
-        lexer.read_char();
         lexer
+    }
+
+    pub fn set_input(&mut self, input: String) {
+        self.input = input;
+        self.position = 0;
+        self.read_position = 0;
+        self.ch = '\0';
+        self.line += 1;
+        self.column = 0;
+
+        self.read_char();
     }
 
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
+
+        if self.block_comment {
+            self.skip_comment();
+        }
 
         let mut tok = Token {
             r#type: TokenType::ILLEGAL,
@@ -95,8 +110,18 @@ impl Lexer {
             }
 
             '/' => {
-                tok.literal = self.ch.to_string();
-                tok.r#type = TokenType::DIV;
+                if self.peek_char() == '/' {
+                    self.read_char();
+                    self.skip_line_comment();
+                    return self.next_token();
+                } else if self.peek_char() == '*' {
+                    self.read_char();
+                    self.block_comment = true;
+                    return self.next_token();
+                } else {
+                    tok.literal = self.ch.to_string();
+                    tok.r#type = TokenType::DIV;
+                }
             }
 
             '.' => {
@@ -474,4 +499,25 @@ impl Lexer {
         }
     }
 
+    fn skip_line_comment(&mut self) {
+        while self.ch != '\n' && self.ch != '\r' && self.ch != '\0' {
+            self.read_char();
+        }
+    }
+
+    fn skip_comment(&mut self) {
+        while !(self.ch == '*' && self.peek_char() == '/') {
+            if self.ch == '\0' {
+                return;
+            }
+            self.read_char();
+        }
+
+        if self.ch == '*' && self.peek_char() == '/' {
+            self.read_char(); 
+            self.read_char(); 
+
+            self.block_comment = false;
+        }
+    }
 }

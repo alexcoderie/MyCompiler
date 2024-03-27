@@ -8,13 +8,13 @@ pub mod lexer;
 fn main() -> io::Result<()>{
     let mut output_file = fs::File::create("./res/tokens.txt")?;
 
-    if let Ok(file) = File::open("./res/8.c") {
+    if let Ok(file) = File::open("./res/9.c") {
         let reader = BufReader::new(file);
+        let mut lexer = Lexer::new(String::new());
 
         for line in reader.lines() {
             let line = line.unwrap();
-
-            let mut lexer = Lexer::new(line);
+            lexer.set_input(line);
 
             loop {
                 let token = lexer.next_token();
