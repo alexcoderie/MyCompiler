@@ -1,5 +1,3 @@
-use std::fmt::Pointer;
-
 use crate::token::token;
 use crate::token::token::{Token, TokenType};
 
