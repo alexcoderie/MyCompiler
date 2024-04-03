@@ -25,7 +25,6 @@ fn main() -> io::Result<()>{
                 }
 
                 writeln!(output_file, "{:?}", token)?;
-
             }
         }
     } else {
