@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::{fmt::Pointer, num::ParseIntError};
 
 use crate::token::token::{Token, TokenType};
 
@@ -35,21 +35,36 @@ impl Parser {
 
     fn type_base(&mut self) -> bool {
         if let Some(token) = self.current_token() {
+            let start_token = self.current_token_index;
             match *token {
-                TokenType::INT | TokenType::DOUBLE | TokenType::CHAR => {
+                TokenType::INT => {
+                    self.consume();
+                    true
+                }
+
+                TokenType::DOUBLE => {
+                    self.consume();
+                    true
+                }
+
+                TokenType::CHAR => {
                     self.consume();
                     true
                 }
 
                 TokenType::STRUCT => {
-                    if let Some(TokenType::ID) = self.peek_token() {
+                    self.consume();
+
+                    if let Some(TokenType::ID) = self.current_token() {
                         self.consume();
                         true
                     } else {
+                        self.current_token_index = start_token;
                         println!("Missing identifier!");
                         false
                     }
                 }
+
                 _ => {
                     println!("Should be INT, DOUBLE, CHAR or STRUCT");
                     false
@@ -62,6 +77,8 @@ impl Parser {
 
     pub fn decl_struct(&mut self) -> bool {
         if let Some(token) = self.current_token() {
+            let start_token = self.current_token_index;
+
             match *token {
                 TokenType::STRUCT => {
                     self.consume();
@@ -87,18 +104,22 @@ impl Parser {
                                     self.consume();
                                     true
                                 } else {
+                                    self.current_token_index = start_token;
                                     println!("Missing ';'");
                                     false
                                 }
                             } else {
+                                self.current_token_index = start_token;
                                 println!("Missing ')'");
                                 false
                             }
                         } else {
+                            self.current_token_index = start_token;
                             println!("Missing '('!");
                             false
                         }
                     } else {
+                        self.current_token_index = start_token;
                         println!("Missing identifier!");
                         false
                     }
@@ -116,7 +137,35 @@ impl Parser {
     }
 
     fn decl_var(&mut self) -> bool {
-        false
+        if self.type_base() {
+            if let Some(TokenType::ID) = self.current_token() {
+                let start_token = self.current_token_index;
+
+                self.consume();
+                self.array_decl();
+
+                loop {
+                    if let Some(TokenType::COMMA) = self.current_token() {
+                        self.consume();
+
+                        if let Some(TokenType::ID) = self.current_token() {
+                            self.consume();
+                            self.array_decl();
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    fn array_decl(&self) -> _ {
+        todo!()
     }
 
 }
@@ -178,5 +227,7 @@ mod tests {
         let mut parser = Parser::new(tokens);
 
         assert_eq!(parser.decl_struct(), true);
+        println!("{:?}", parser.current_token());
+
     }
 }
