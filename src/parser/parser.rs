@@ -152,20 +152,55 @@ impl Parser {
                             self.consume();
                             self.array_decl();
                         } else {
+                            self.current_token_index = start_token;
+                            println!("{:?}", self.current_token());
                             break;
                         }
                     } else {
                         break;
                     }
                 }
+
+                if let Some(TokenType::SEMICOLON) = self.current_token() {
+                    self.consume();
+                    true
+                } else {
+                    self.current_token_index = start_token;
+                    println!("{:?}", self.current_token());
+                    false
+                }
+            } else {
+                println!("Missing identifier!");
+                false
+            }
+        } else {
+            println!("Cannot define variable without a type!");
+            false
+        }
+    }
+
+    fn array_decl(&mut self) -> bool {
+        if let Some(TokenType::LBRACKET) = self.current_token() {
+            let start_token = self.current_token_index;
+
+            self.consume();
+            self.expr();
+
+            if let Some(TokenType::RBRACKET) = self.current_token() {
+                self.consume();
+                true
+            } else {
+                self.current_token_index = start_token;
+                println!("Missing ']'");
+                false
             }
         } else {
             false
         }
     }
 
-    fn array_decl(&self) -> _ {
-        todo!()
+    fn expr(&self) -> bool {
+        false
     }
 
 }
@@ -177,22 +212,6 @@ mod tests {
     #[test]
     fn test_decl_struct() {
         let mut tokens: Vec<TokenType> = Vec::new();
-
-        let t_struct = Token {
-            r#type: TokenType::STRUCT,
-            literal: String::from(""),
-            line: 1,
-            column: 1,
-
-        };
-
-        let t_id = Token {
-            r#type: TokenType::ID,
-            literal: String::from(""),
-            line: 1,
-            column: 1,
-
-        };
 
         let t_lacc = Token {
             r#type: TokenType::LACC,
@@ -210,23 +229,65 @@ mod tests {
 
         };
 
+
+        let t_int = Token {
+            r#type: TokenType::INT,
+            literal: String::from("int"),
+            line: 1,
+            column: 1,
+        };
+
+        let t_id = Token {
+            r#type: TokenType::ID,
+            literal: String::from("x"),
+            line: 1,
+            column: 1,
+        };
+
+        let t_id1 = Token {
+            r#type: TokenType::ID,
+            literal: String::from("y"),
+            line: 1,
+            column: 1,
+        };
         let t_semicolon = Token {
             r#type: TokenType::SEMICOLON,
             literal: String::from(""),
             line: 1,
             column: 1,
-
         };
 
-        tokens.push(t_struct.r#type);
+        let t_comma = Token {
+            r#type: TokenType::COMMA,
+            literal: String::from(","),
+            line: 1,
+            column: 1,
+        };
+
+        let t_lbrack = Token {
+            r#type: TokenType::LBRACKET,
+            literal: String::from("["),
+            line: 1,
+            column: 1,
+        };
+
+        let t_rbrack= Token {
+            r#type: TokenType::RBRACKET,
+            literal: String::from("]"),
+            line: 1,
+            column: 1,
+        };
+        tokens.push(t_int.r#type);
         tokens.push(t_id.r#type);
-        tokens.push(t_lacc.r#type);
-        tokens.push(t_racc.r#type);
+        tokens.push(t_comma.r#type);
+        tokens.push(t_id1.r#type);
+        tokens.push(t_lbrack.r#type);
+        tokens.push(t_rbrack.r#type);
         tokens.push(t_semicolon.r#type);
 
         let mut parser = Parser::new(tokens);
 
-        assert_eq!(parser.decl_struct(), true);
+        assert_eq!(parser.decl_var(), true);
         println!("{:?}", parser.current_token());
 
     }
