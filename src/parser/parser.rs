@@ -1,17 +1,20 @@
-use std::{fmt::Pointer, num::ParseIntError};
+use std::fmt::Pointer;
 
 use crate::token::token::{Token, TokenType};
 
-pub struct Parser {
-    tokens: Vec<TokenType>,
+pub struct Parser<'a> {
+    tokens: Vec<Token>,
     current_token_index: usize,
+    consumed_token: Option<&'a Token>,
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<TokenType>) -> Parser {
+impl<'a> Parser<'a> {
+    /// Creates a new [`Parser`].
+    pub fn new(tokens: Vec<Token>) -> Parser<'a> {
         let mut parser = Parser {
             tokens,
             current_token_index: 0,
+            consumed_token: None,
         };
 
         parser
@@ -21,139 +24,282 @@ impl Parser {
 
     }
 
-    fn current_token(&self) -> Option<&TokenType> {
+    fn current_token(&mut self) -> Option<&Token> {
         self.tokens.get(self.current_token_index)
     }
 
+    fn get_token_type(&self) -> TokenType {
+        let token_type;
+        if let Some(token) = self.current_token() {
+            let token_type = token.r#type;
+        } else {
+            let token_type = TokenType::ILLEGAL;
+        }
+
+        token_type
+    }
+
     fn consume(&mut self) {
+        if let Some(token) = self.current_token() {
+            self.consumed_token = Some(token.clone());
+        }
         self.current_token_index += 1;
     }
 
-    fn peek_token(&self) -> Option<&TokenType> {
+    fn peek_token(&self) -> Option<&Token> {
         self.tokens.get(self.current_token_index + 1)
     }
 
     fn type_base(&mut self) -> bool {
-        if let Some(token) = self.current_token() {
-            let start_token = self.current_token_index;
-            match *token {
-                TokenType::INT => {
-                    self.consume();
-                    true
-                }
+        // if let Some(token) = self.current_token() {
+        //     let start_token = self.current_token_index;
+        //     match token.r#type {
+        //         TokenType::INT => {
+        //             self.consume();
+        //             true
+        //         }
+        //
+        //         TokenType::DOUBLE => {
+        //             self.consume();
+        //             true
+        //         }
+        //
+        //         TokenType::CHAR => {
+        //             self.consume();
+        //             true
+        //         }
+        //
+        //         TokenType::STRUCT => {
+        //             self.consume();
+        //
+        //             if let Some(token) = self.current_token() {
+        //                 if token.r#type == TokenType::ID {
+        //                     self.consume();
+        //                     true
+        //                 } else {
+        //                     self.current_token_index = start_token;
+        //                     println!("Missing identifier!");
+        //                     false
+        //                 }
+        //             } else {
+        //                 false
+        //             }
+        //         }
+        //
+        //         _ => {
+        //             println!("Should be INT, DOUBLE, CHAR or STRUCT");
+        //             false
+        //         }
+        //     }
+        // } else {
+        //     false
+        // }
 
-                TokenType::DOUBLE => {
-                    self.consume();
-                    true
-                }
+        let start_token = self.current_token_index;
 
-                TokenType::CHAR => {
-                    self.consume();
-                    true
-                }
-
-                TokenType::STRUCT => {
-                    self.consume();
-
-                    if let Some(TokenType::ID) = self.current_token() {
-                        self.consume();
-                        true
-                    } else {
-                        self.current_token_index = start_token;
-                        println!("Missing identifier!");
-                        false
-                    }
-                }
-
-                _ => {
-                    println!("Should be INT, DOUBLE, CHAR or STRUCT");
-                    false
-                }
-            }
-        } else {
-            false
+        if self.get_token_type() == TokenType::INT {
+            self.consume();
+            return true;
         }
+
+        if self.get_token_type() == TokenType::DOUBLE {
+            self.consume();
+            return true;
+        }
+
+        if self.get_token_type() == TokenType::CHAR {
+            self.consume();
+            return true;
+        }
+
+        if self.get_token_type() == TokenType::STRUCT {
+            self.consume();
+
+            if self.get_token_type() == TokenType::ID {
+                self.consume();
+                return true;
+            } else {
+                self.current_token_index = start_token;
+                println!("Missing identifier!");
+                return false;
+            }
+        }
+        
+        println!("Should be INT, DOUBLE, CHAR or STRUCT");
+        false
     }
 
     pub fn decl_struct(&mut self) -> bool {
-        if let Some(token) = self.current_token() {
-            let start_token = self.current_token_index;
+        // if let Some(token) = self.current_token() {
+        //     let start_token = self.current_token_index;
+        //
+        //     if token.r#type == TokenType::STRUCT {
+        //         self.consume();
+        //
+        //         if let Some(token) = self.current_token() {
+        //             if token.r#type == TokenType::ID {
+        //                 self.consume();
+        //
+        //                 if let Some(token) = self.current_token() {
+        //                     if token.r#type == TokenType::LACC {
+        //                         self.consume();
+        //
+        //                         loop {
+        //                             if !self.decl_var() {
+        //                                 break;
+        //                             } else {
+        //                                 continue;
+        //                             }
+        //                         }
+        //
+        //                         if let Some(token) = self.current_token() {
+        //                             if token.r#type == TokenType::RACC {
+        //                                 self.consume();
+        //
+        //                                 if let Some(token) = self.current_token() && token.r#type == TokenType::SEMICOLON {
+        //                                     self.consume();
+        //                                     return true;
+        //                                 } else {
+        //                                     self.current_token_index = start_token;
+        //                                     println!("Missing ';'!");
+        //                                     return false;
+        //                                 }
+        //                             } else {
+        //                                 self.current_token_index = start_token;
+        //                                 println!("Missing ')'!");
+        //                                 return false;
+        //                             }
+        //                         }
+        //                     } else {
+        //                         self.current_token_index = start_token;
+        //                         println!("Missing '('!");
+        //                         return false;
+        //
+        //                     }
+        //                 }
+        //             } else {
+        //                 self.current_token_index = start_token;
+        //                 println!("Missing identifier!");
+        //                 return false;
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     println!("Couldn't get token!");
+        //     false
+        // }
 
-            match *token {
-                TokenType::STRUCT => {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::STRUCT {
+            self.consume();
+
+            if self.get_token_type() == TokenType::ID {
+                self.consume();
+
+                if self.get_token_type() == TokenType::LACC {
                     self.consume();
 
-                    if let Some(TokenType::ID) = self.current_token() {
+                    loop {
+                        if !self.decl_var() {
+                            break;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    if self.get_token_type() == TokenType::RACC {
                         self.consume();
-                        
-                        if let Some(TokenType::LACC) = self.current_token() {
+
+                        if self.get_token_type() == TokenType::SEMICOLON {
                             self.consume();
-
-                            loop {
-                                if !self.decl_var() {
-                                    break;
-                                } else {
-                                    continue;
-                                }
-                            }
-
-                            if let Some(TokenType::RACC) = self.current_token() {
-                                self.consume();
-
-                                if let Some(TokenType::SEMICOLON) = self.current_token() {
-                                    self.consume();
-                                    true
-                                } else {
-                                    self.current_token_index = start_token;
-                                    println!("Missing ';'");
-                                    false
-                                }
-                            } else {
-                                self.current_token_index = start_token;
-                                println!("Missing ')'");
-                                false
-                            }
+                            return true;
                         } else {
                             self.current_token_index = start_token;
-                            println!("Missing '('!");
-                            false
+                            println!("Missing ';'!");
+                            return false;
                         }
                     } else {
                         self.current_token_index = start_token;
-                        println!("Missing identifier!");
-                        false
+                        println!("Missing ')'!");
+                        return false;
                     }
+                } else {
+                    self.current_token_index = start_token;
+                    println!("Missing '('!");
+                    return false;
                 }
-
-                _ => {
-                    println!("Missing struct keyword");
-                    false
-                }
+            } else{
+                self.current_token_index = start_token;
+                println!("Missing identifier!");
+                return false;
             }
         } else {
-            println!("Couldn't get token!");
-            false
+            self.current_token_index = start_token;
+            println!("Missing 'struct' keyword!");
+            return false;
         }
     }
 
     fn decl_var(&mut self) -> bool {
+        // if self.type_base() {
+        //     if let Some(TokenType::ID) = self.current_token() {
+        //         let start_token = self.current_token_index;
+        //
+        //         self.consume();
+        //         self.array_decl();
+        //
+        //         loop {
+        //             if let Some(TokenType::COMMA) = self.current_token() {
+        //                 self.consume();
+        //
+        //                 if let Some(TokenType::ID) = self.current_token() {
+        //                     self.consume();
+        //                     self.array_decl();
+        //                 } else {
+        //                     self.current_token_index = start_token;
+        //                     println!("{:?}", self.current_token());
+        //                     break;
+        //                 }
+        //             } else {
+        //                 break;
+        //             }
+        //         }
+        //
+        //         if let Some(TokenType::SEMICOLON) = self.current_token() {
+        //             self.consume();
+        //             true
+        //         } else {
+        //             self.current_token_index = start_token;
+        //             println!("{:?}", self.current_token());
+        //             false
+        //         }
+        //     } else {
+        //         println!("Missing identifier!");
+        //         false
+        //     }
+        // } else {
+        //     println!("Cannot define variable without a type!");
+        //     false
+        // }
+        //
+        
         if self.type_base() {
-            if let Some(TokenType::ID) = self.current_token() {
+            if self.get_token_type() == TokenType::ID {
                 let start_token = self.current_token_index;
 
                 self.consume();
                 self.array_decl();
 
                 loop {
-                    if let Some(TokenType::COMMA) = self.current_token() {
+                    if self.get_token_type() == TokenType::COMMA {
                         self.consume();
 
-                        if let Some(TokenType::ID) = self.current_token() {
+                        if self.get_token_type() == TokenType::ID {
                             self.consume();
                             self.array_decl();
                         } else {
                             self.current_token_index = start_token;
-                            println!("{:?}", self.current_token());
                             break;
                         }
                     } else {
@@ -161,41 +307,101 @@ impl Parser {
                     }
                 }
 
-                if let Some(TokenType::SEMICOLON) = self.current_token() {
+                if self.get_token_type() == TokenType::SEMICOLON {
                     self.consume();
-                    true
+                    return true;
                 } else {
                     self.current_token_index = start_token;
-                    println!("{:?}", self.current_token());
-                    false
+                    return false;
                 }
             } else {
                 println!("Missing identifier!");
-                false
+                return false;
             }
         } else {
             println!("Cannot define variable without a type!");
-            false
+            return false;
         }
     }
 
     fn array_decl(&mut self) -> bool {
-        if let Some(TokenType::LBRACKET) = self.current_token() {
-            let start_token = self.current_token_index;
+        // if let Some(TokenType::LBRACKET) = self.current_token() {
+        //     let start_token = self.current_token_index;
+        //
+        //     self.consume();
+        //     self.expr();
+        //
+        //     if let Some(TokenType::RBRACKET) = self.current_token() {
+        //         self.consume();
+        //         return true;
+        //     } else {
+        //         self.current_token_index = start_token;
+        //         println!("Missing ']'!");
+        //         return false;
+        //     }
+        // } else {
+        //     return false;
+        // }
+        
+        let start_token = self.current_token_index;
 
+        if self.get_token_type() == TokenType::LBRACKET {
             self.consume();
             self.expr();
 
-            if let Some(TokenType::RBRACKET) = self.current_token() {
+            if self.get_token_type() == TokenType::RBRACKET {
                 self.consume();
-                true
+                return true;
             } else {
                 self.current_token_index = start_token;
-                println!("Missing ']'");
-                false
+                println!("Missing ']'!");
+                return false;
             }
         } else {
-            false
+            return false;
+        }
+    }
+
+    fn type_name(&mut self) -> bool {
+        if self.type_base() {
+            self.array_decl(); 
+            return true;
+        } else {
+            println!("Missing type base!");
+            return false;
+        }
+    }
+
+    fn decl_func(&mut self) -> bool {
+        if self.type_base() {
+            if self.get_token_type() == TokenType::MUL {
+                self.consume();
+            }
+        } else if self.get_token_type() == TokenType::VOID {
+            self.consume();
+        } else {
+            println!("Cannot declare a funcion without a type!");
+            return false;
+        }
+
+        if self.get_token_type() == TokenType::ID {
+            let start_token = self.current_token_index;
+            self.consume();
+
+            if self.get_token_type() == TokenType::LPAR {
+                self.consume();
+            }
+        } else {
+            println!("Function needs an identifier!");
+            return false;
+        }
+    }
+
+    fn func_arg(&mut self) -> bool {
+        if self.type_base() {
+
+        } else {
+            println!("Missing typebase!");
         }
     }
 
@@ -277,17 +483,18 @@ mod tests {
             line: 1,
             column: 1,
         };
+
         tokens.push(t_int.r#type);
-        tokens.push(t_id.r#type);
-        tokens.push(t_comma.r#type);
-        tokens.push(t_id1.r#type);
-        tokens.push(t_lbrack.r#type);
-        tokens.push(t_rbrack.r#type);
-        tokens.push(t_semicolon.r#type);
+        // tokens.push(t_id.r#type);
+        // tokens.push(t_comma.r#type);
+        // tokens.push(t_id1.r#type);
+        // tokens.push(t_lbrack.r#type);
+        // tokens.push(t_rbrack.r#type);
+        // tokens.push(t_semicolon.r#type);
 
         let mut parser = Parser::new(tokens);
 
-        assert_eq!(parser.decl_var(), true);
+        assert_eq!(parser.type_base(), true);
         println!("{:?}", parser.current_token());
 
     }
