@@ -105,28 +105,28 @@ impl Parser {
                             self.consume();
                             return true;
                         } else {
-                            self.current_token_index = start_token;
                             println!("Missing ';'!");
+                            self.current_token_index = start_token;
                             return false;
                         }
                     } else {
-                        self.current_token_index = start_token;
                         println!("Missing ')'!");
+                        self.current_token_index = start_token;
                         return false;
                     }
                 } else {
-                    self.current_token_index = start_token;
                     println!("Missing '('!");
+                    self.current_token_index = start_token;
                     return false;
                 }
             } else{
-                self.current_token_index = start_token;
                 println!("Missing identifier!");
+                self.current_token_index = start_token;
                 return false;
             }
         } else {
-            self.current_token_index = start_token;
             println!("Missing 'struct' keyword!");
+            self.current_token_index = start_token;
             return false;
         }
     }
@@ -222,21 +222,21 @@ impl Parser {
             if self.get_token_type() == TokenType::LPAR {
                 self.consume();
 
-                self.func_arg();
+                if self.func_arg() {
+                    loop {
+                        if self.get_token_type() == TokenType::COMMA {
+                            self.consume();
 
-                loop {
-                    if self.get_token_type() == TokenType::COMMA {
-                        self.consume();
-
-                        if !self.func_arg() {
-                            println!("Comma should be followed by an argument!");
-                            self.current_token_index = start_token;
-                            break;
+                            if !self.func_arg() {
+                                println!("Comma should be followed by an argument!");
+                                self.current_token_index = start_token;
+                                return false;
+                            } else {
+                                continue;
+                            }
                         } else {
-                            continue;
+                            break;
                         }
-                    } else {
-                        break;
                     }
                 }
 
@@ -484,6 +484,136 @@ impl Parser {
         true
     }
 
+    fn expr_unary(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::SUB || self.get_token_type() == TokenType::NOT {
+            self.consume();
+
+            if self.expr_unary() {
+                return true;
+            } else {
+                println!("Invalid expression after uanry operator");
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return self.expr_postfix();
+        }
+    }
+
+    fn expr_postfix(&mut self) -> bool {
+        if self.expr_primary() {
+            if self.expr_postfix_tail() {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    fn expr_postfix_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        match self.get_token_type() {
+            TokenType::LBRACKET => {
+                self.consume();
+
+                if self.expr() {
+                    if self.get_token_type() == TokenType::RBRACKET {
+                        self.consume();
+                        return self.expr_postfix_tail();
+                    } else {
+                        println!("Missing ']' after array index");
+                        self.current_token_index = start_token;
+                        return false;
+                    }
+                } else {
+                    println!("Invalid expression inside square brackets");
+                    return false;
+                }
+            }
+
+            TokenType::DOT => {
+                self.consume();
+
+                if self.get_token_type() == TokenType::ID {
+                    self.consume();
+                    return self.expr_postfix_tail();
+                } else {
+                    println!("Missing identifier after '.' operator");
+                    self.current_token_index = start_token;
+                    return false;
+                }
+            }
+
+            _ => false
+        }
+    }
+
+    fn expr_primary(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        match self.get_token_type() {
+            TokenType::ID => {
+                self.consume();
+                
+                if self.get_token_type() == TokenType::LPAR {
+                    self.consume();
+
+                    if self.expr() {
+                        loop {
+                            if self.get_token_type() == TokenType::COMMA {
+                                self.consume();
+
+                                if !self.expr() {
+                                    println!("Comma should be followed by another expression!");
+                                    self.current_token_index = start_token;
+                                    return false;
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if self.get_token_type() == TokenType::RPAR {
+                        self.consume();
+                    } else {
+                        println!("Expected ')' to close the expression!");
+                        self.current_token_index = start_token;
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            TokenType::CT_INT | TokenType::CT_REAL | TokenType::CT_CHAR | TokenType::CT_STRING => {
+                self.consume();
+                return true;
+            }
+
+            TokenType::LPAR => {
+                self.consume();
+
+                if self.expr() {
+                    if self.get_token_type() == TokenType::RPAR {
+                        self.consume();
+                        return true;
+                    } else {
+                        println!("Expected ')' to close the expression!");
+                    }
+                }
+
+                return false;
+            }
+
+            _ => false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -656,6 +786,13 @@ mod tests {
             line: 1,
             column: 1,
         };
+
+        let t_dot = Token {
+            r#type: TokenType::DOT,
+            literal: String::from("."),
+            line: 1,
+            column: 1,
+        };
         // tokens.push(t_id.r#type);
         // tokens.push(t_semicolon.r#type);
         // tokens.push(t_struct);
@@ -663,27 +800,33 @@ mod tests {
         // tokens.push(t_int);
         // tokens.push(t_id.clone());
         // tokens.push(t_semicolon.clone());
-        tokens.push(t_for);
-        tokens.push(t_lpar.clone());
-        tokens.push(t_semicolon.clone());
-        tokens.push(t_semicolon.clone());
-        tokens.push(t_rpar.clone());
-        tokens.push(t_lacc);
-        tokens.push(t_if);
-        tokens.push(t_lpar);
-        tokens.push(t_rpar);
-        tokens.push(t_return.clone());
-        tokens.push(t_semicolon.clone());
-        tokens.push(t_else);
-        tokens.push(t_break);
-        tokens.push(t_semicolon);
-        tokens.push(t_racc.clone());
-        // tokens.push(t_racc);
-        // tokens.push(t_mul);
+        // tokens.push(t_for);
+        // tokens.push(t_lpar.clone());
+        // tokens.push(t_semicolon.clone());
+        // tokens.push(t_semicolon.clone());
+        // tokens.push(t_rpar.clone());
+        // tokens.push(t_lacc);
+        // tokens.push(t_if);
+        tokens.push(t_id1.clone());
+        tokens.push(t_dot.clone());
+        tokens.push(t_id1.clone());
+        tokens.push(t_lbrack.clone());
+        // tokens.push(t_rbrack);
+        // tokens.push(t_dot);
         // tokens.push(t_id1.clone());
         // tokens.push(t_lbrack);
-        // tokens.push(t_rbrack);
+        // tokens.push(t_lpar);
+        // tokens.push(t_comma.clone());
         // tokens.push(t_comma);
+        // tokens.push(t_rpar);
+        // tokens.push(t_return.clone());
+        // tokens.push(t_semicolon.clone());
+        // tokens.push(t_else);
+        // tokens.push(t_break);
+        // tokens.push(t_semicolon);
+        // tokens.push(t_racc.clone());
+        // tokens.push(t_racc);
+        // tokens.push(t_mul);
         // tokens.push(t_id1);
         // tokens.push(t_semicolon.clone());
         // tokens.push(t_racc);
@@ -692,7 +835,7 @@ mod tests {
 
         let mut parser = Parser::new(tokens);
 
-        assert_eq!(parser.stm(), true);
+        assert_eq!(parser.expr_postfix(), true);
         println!("{:?}", parser.current_token());
 
     }
