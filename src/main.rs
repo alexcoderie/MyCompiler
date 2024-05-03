@@ -1,5 +1,8 @@
 use std::{fs::{self, File}, io::{self, BufRead, BufReader, Write}};
 
+use parser::parser::Parser;
+use token::token::Token;
+
 use crate::{lexer::lexer::Lexer, token::token::TokenType};
 
 pub mod token;
@@ -12,6 +15,7 @@ fn main() -> io::Result<()>{
     if let Ok(file) = File::open("./res/9.c") {
         let reader = BufReader::new(file);
         let mut lexer = Lexer::new(String::new());
+        let mut tokens: Vec<Token> = Vec::new();
 
         for line in reader.lines() {
             let line = line.unwrap();
@@ -22,10 +26,21 @@ fn main() -> io::Result<()>{
 
                 if token.r#type == TokenType::EOF {
                     break;
+                } else {
+                    tokens.push(token.clone());
                 }
 
                 writeln!(output_file, "{:?}", token)?;
             }
+        }
+        tokens.push(Token {r#type: TokenType::EOF, literal: String::from("EOF"), line: lexer.get_line() , column: 1});
+
+        let mut parser = Parser::new(tokens);
+        if parser.unit() {
+            print!("\x1B[2J\x1B[1;1H");
+            println!("Success!");
+        } else {
+            println!("Didn't work :(");
         }
     } else {
         eprintln!("Failed to open the file");

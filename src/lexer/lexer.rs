@@ -26,6 +26,10 @@ impl Lexer {
         lexer
     }
 
+    pub fn get_line(&mut self) -> i32 {
+        return self.line;
+    }
+
     pub fn set_input(&mut self, input: String) {
         self.input = input;
         self.position = 0;

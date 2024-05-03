@@ -1,5 +1,3 @@
-use std::{borrow::Borrow, fmt::Pointer};
-
 use crate::token::token::{Token, TokenType};
 
 pub struct Parser {
@@ -20,10 +18,6 @@ impl Parser {
         parser
     }
 
-    pub fn start() {
-
-    }
-
     fn current_token(&mut self) -> Option<&Token> {
         self.tokens.get(self.current_token_index)
     }
@@ -41,6 +35,27 @@ impl Parser {
             self.consumed_token = Some(token).cloned();
         }
         self.current_token_index += 1;
+    }
+
+    pub fn unit(&mut self) -> bool {
+        loop {
+            if self.decl_struct() {
+                continue;
+            } else if self.decl_func() {
+                continue;
+            } else if self.decl_var() {
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        if self.get_token_type() == TokenType::EOF {
+            self.consume();
+            return true;
+        } else {
+            return false;
+        }
     }
 
     fn type_base(&mut self) -> bool {
@@ -106,35 +121,29 @@ impl Parser {
                             return true;
                         } else {
                             println!("Missing ';'!");
-                            self.current_token_index = start_token;
-                            return false;
                         }
                     } else {
                         println!("Missing ')'!");
-                        self.current_token_index = start_token;
-                        return false;
                     }
                 } else {
                     println!("Missing '('!");
-                    self.current_token_index = start_token;
-                    return false;
                 }
             } else{
                 println!("Missing identifier!");
-                self.current_token_index = start_token;
-                return false;
             }
         } else {
             println!("Missing 'struct' keyword!");
-            self.current_token_index = start_token;
-            return false;
         }
+
+        self.current_token_index = start_token;
+        return false;
     }
 
     fn decl_var(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
         if self.type_base() {
             if self.get_token_type() == TokenType::ID {
-                let start_token = self.current_token_index;
 
                 self.consume();
                 self.array_decl();
@@ -147,8 +156,9 @@ impl Parser {
                             self.consume();
                             self.array_decl();
                         } else {
+                            println!("Comma should be followed by an argument!");
                             self.current_token_index = start_token;
-                            break;
+                            return false;
                         }
                     } else {
                         break;
@@ -159,18 +169,17 @@ impl Parser {
                     self.consume();
                     return true;
                 } else {
-                    self.current_token_index = start_token;
                     println!("Missing ';'");
-                    return false;
                 }
             } else {
                 println!("Missing identifier!");
-                return false;
             }
         } else {
             println!("Cannot define variable without a type!");
-            return false;
         }
+
+        self.current_token_index = start_token;
+        return false;
     }
 
     fn array_decl(&mut self) -> bool {
@@ -179,6 +188,7 @@ impl Parser {
         if self.get_token_type() == TokenType::LBRACKET {
             self.consume();
             self.expr();
+            println!("{:?}", self.current_token());
 
             if self.get_token_type() == TokenType::RBRACKET {
                 self.consume();
@@ -204,6 +214,8 @@ impl Parser {
     }
 
     fn decl_func(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
         if self.type_base() {
             if self.get_token_type() == TokenType::MUL {
                 self.consume();
@@ -216,7 +228,6 @@ impl Parser {
         }
 
         if self.get_token_type() == TokenType::ID {
-            let start_token = self.current_token_index;
             self.consume();
 
             if self.get_token_type() == TokenType::LPAR {
@@ -242,22 +253,20 @@ impl Parser {
 
                 if self.get_token_type() == TokenType::RPAR {
                     self.consume();
-                    return true;
+                    return self.stm_compound();
 
                 } else {
                     println!("Expecting ')' after function arguments!");
-                    self.current_token_index = start_token;
-                    return false;
                 }
             } else {
-                println!("Funtion needs an opening paranthesis for arguments!");
-                self.current_token_index = start_token;
-                return false;
+                println!("Function needs an opening paranthesis for arguments!");
             }
         } else {
             println!("Function needs an identifier!");
-            return false;
         }
+
+        self.current_token_index = start_token;
+        return false;
     }
 
     fn func_arg(&mut self) -> bool {
@@ -314,24 +323,19 @@ impl Parser {
                                 return true;
                             } else {
                                 println!("Missing statement!");
-                                self.current_token_index = start_token;
-                                return false;
                             }
                         } else {
                             println!("Expected ')' to close the if statement!");
-                            self.current_token_index = start_token;
-                            return false;
                         }
                     } else {
                         println!("Expected expression!");
-                        self.current_token_index = start_token;
-                        return false;
                     }
                 } else {
                     println!("Expected '(' to open the if statement!");
-                    self.current_token_index = start_token;
-                    return false;
                 }
+
+                self.current_token_index = start_token;
+                return false;
             }
 
             TokenType::WHILE => {
@@ -348,22 +352,19 @@ impl Parser {
                                 return true;
                             } else {
                                 println!("Missing statement!");
-                                return false;
                             }
                         } else {
                             println!("Expected ')' to close the while statement!");
-                            self.current_token_index = start_token;
-                            return false;
                         }
                     } else {
                         println!("Missing expression!");
-                        self.current_token_index = start_token;
-                        return false;
                     }
                 } else {
                     println!("Expected '(' to open the while statement!");
-                    return false;
                 }
+
+                self.current_token_index = start_token;
+                return false;
             }
 
             TokenType::FOR => {
@@ -392,25 +393,19 @@ impl Parser {
                                 }
                             } else {
                                 println!("Expected ')' to close the for statement!");
-                                self.current_token_index = start_token;
-                                return false;
                             }
                         } else {
                             println!("Expected ';' in 'for' statement specifier!");
-                            self.current_token_index = start_token;
-                            return false;
                         }
                     } else {
                         println!("Expected ';' in 'for' statement specifier!");
-                        self.current_token_index = start_token;
-                        return false;
                     }
-
                 } else {
                     println!("Expected '(' to open the for statement");
-                    self.current_token_index = start_token;
-                    return false;
                 }
+
+                self.current_token_index = start_token;
+                return false;
             }
 
             TokenType::BREAK => {
@@ -435,6 +430,7 @@ impl Parser {
                     return true;
                 } else {
                     println!("Expected ';' after expression!");
+                    self.current_token_index = start_token;
                     return false;
                 }
             }
@@ -459,10 +455,12 @@ impl Parser {
             self.consume();
 
             loop {
-                if self.decl_var() || self.stm(){
+                if self.decl_var() {
+                    continue;
+                } else if self.stm() {
                     continue;
                 } else {
-                    break;
+                    break
                 }
             }
 
@@ -481,7 +479,213 @@ impl Parser {
     }
 
     fn expr(&mut self) -> bool {
-        true
+        return self.expr_assign();
+    }
+
+    fn expr_assign(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.expr_unary() {
+            if self.get_token_type() == TokenType::ASSIGN {
+                self.consume();
+
+                if self.expr_assign() {
+                    return true;
+                } else {
+                    return false
+                }
+            } else {
+                self.current_token_index = start_token;
+                return self.expr_or();
+            }
+        }
+
+        return false;
+    }
+
+    fn expr_or(&mut self) -> bool {
+        if self.expr_and() {
+            return self.expr_or_tail();
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_or_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::OR {
+            self.consume();
+
+            if self.expr_and() {
+                return self.expr_or_tail(); 
+            } else {
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_and(&mut self) -> bool {
+        if self.expr_eq() {
+            return self.expr_and_tail()
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_and_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::AND {
+            self.consume();
+
+            if self.expr_eq() {
+                return self.expr_and_tail();
+            } else {
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_eq(&mut self) -> bool {
+        if self.expr_rel() {
+            return self.expr_eq_tail();
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_eq_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::EQUAL 
+            || self.get_token_type() == TokenType::NOTEQ
+        {
+            self.consume();
+
+            if self.expr_rel() {
+                return self.expr_eq_tail();
+            } else {
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_rel(&mut self) -> bool {
+        if self.expr_add() {
+            return self.expr_rel_tail();
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_rel_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::LESS 
+            || self.get_token_type() == TokenType::LESSEQ 
+            || self.get_token_type() == TokenType::GREATER 
+            || self.get_token_type() == TokenType::GREATEREQ
+        {
+            self.consume();
+
+            if self.expr_add() {
+                return self.expr_rel_tail();
+            } else {
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_add(&mut self) -> bool {
+        if self.expr_mul() {
+            return self.expr_add_tail();
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_add_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::ADD 
+            || self.get_token_type() == TokenType::SUB 
+        {
+            self.consume();
+
+            if self.expr_mul() {
+                return self.expr_add_tail();
+            } else {
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_mul(&mut self) -> bool {
+        if self.expr_cast() {
+            return self.expr_mul_tail();
+        } else {
+            return false;
+        }
+    }
+
+    fn expr_mul_tail(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::MUL 
+            || self.get_token_type() == TokenType::DIV 
+        {
+            self.consume();
+
+            if self.expr_cast() {
+                return self.expr_mul_tail();
+            } else {
+                self.current_token_index = start_token;
+                return false
+            }
+        } else {
+            return true;
+        }
+    }
+
+    fn expr_cast(&mut self) -> bool {
+        let start_token = self.current_token_index;
+
+        if self.get_token_type() == TokenType::LPAR {
+            self.consume();
+
+            if self.type_name() {
+                if self.get_token_type() == TokenType::RPAR {
+                    self.consume();
+                    return self.expr_cast();
+                } else {
+                    println!("Expected ')' to close the expression!");
+                    self.current_token_index = start_token;
+                    return false;
+                }
+            } else {
+                println!("Expected expression!");
+                self.current_token_index = start_token;
+                return false;
+            }
+        } else {
+            return self.expr_unary();
+        }
     }
 
     fn expr_unary(&mut self) -> bool {
@@ -504,12 +708,10 @@ impl Parser {
 
     fn expr_postfix(&mut self) -> bool {
         if self.expr_primary() {
-            if self.expr_postfix_tail() {
-                return true;
-            }
+            return self.expr_postfix_tail();
+        } else {
+            return false;
         }
-        
-        return false;
     }
 
     fn expr_postfix_tail(&mut self) -> bool {
@@ -547,7 +749,7 @@ impl Parser {
                 }
             }
 
-            _ => false
+            _ => true
         }
     }
 
@@ -604,6 +806,7 @@ impl Parser {
                         self.consume();
                         return true;
                     } else {
+                        self.current_token_index = start_token;
                         println!("Expected ')' to close the expression!");
                     }
                 }
@@ -618,12 +821,14 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::{self, File}, io::{self, BufRead, BufReader, Write}};
+
+    use crate::{lexer::lexer::Lexer, token::token::TokenType};
+
     use super::*;
 
     #[test]
     fn test_rules() {
-        let mut tokens: Vec<Token> = Vec::new();
-
         let t_lacc = Token {
             r#type: TokenType::LACC,
             literal: String::from(""),
@@ -655,12 +860,6 @@ mod tests {
             column: 1,
         };
 
-        let t_id1 = Token {
-            r#type: TokenType::ID,
-            literal: String::from("y"),
-            line: 1,
-            column: 1,
-        };
         let t_semicolon = Token {
             r#type: TokenType::SEMICOLON,
             literal: String::from(""),
@@ -793,50 +992,101 @@ mod tests {
             line: 1,
             column: 1,
         };
-        // tokens.push(t_id.r#type);
-        // tokens.push(t_semicolon.r#type);
-        // tokens.push(t_struct);
+
+        let t_eof = Token {
+            r#type: TokenType::EOF,
+            literal: String::from("eof"),
+            line: 1,
+            column: 1,
+        };
+
+        let t_ctint = Token {
+            r#type: TokenType::CT_INT,
+            literal: String::from("5"),
+            line: 1,
+            column: 1,
+        };
+
+        let t_assign = Token {
+            r#type: TokenType::ASSIGN,
+            literal: String::from("="),
+            line: 1,
+            column: 1,
+        };
+
+        let t_less = Token {
+            r#type: TokenType::LESS,
+            literal: String::from("<"),
+            line: 1,
+            column: 1,
+        };
+
+        let mut tokens: Vec<Token> = Vec::new();
+        // tokens.push(t_int.clone());
+        // tokens.push(t_id.clone());
+        // tokens.push(t_lpar.clone());
+        // tokens.push(t_rpar.clone());
         // tokens.push(t_lacc.clone());
         // tokens.push(t_int);
         // tokens.push(t_id.clone());
+        // tokens.push(t_comma.clone());
+        // tokens.push(t_id.clone());
+        // tokens.push(t_lbrack);
+        // tokens.push(t_ctint.clone());
+        // tokens.push(t_rbrack);
+        // tokens.push(t_comma.clone());
+        // tokens.push(t_id.clone());
         // tokens.push(t_semicolon.clone());
-        // tokens.push(t_for);
+        // tokens.push(t_id.clone());
+        // tokens.push(t_assign.clone());
+        // tokens.push(t_ctint.clone());
+        // tokens.push(t_semicolon.clone());
+        // tokens.push(t_for.clone());
         // tokens.push(t_lpar.clone());
+        // tokens.push(t_id.clone());
+        // tokens.push(t_assign.clone());
+        // tokens.push(t_ctint.clone());
         // tokens.push(t_semicolon.clone());
+        // tokens.push(t_id.clone());
+        // tokens.push(t_less.clone());
+        // tokens.push(t_ctint.clone());
         // tokens.push(t_semicolon.clone());
         // tokens.push(t_rpar.clone());
-        // tokens.push(t_lacc);
-        // tokens.push(t_if);
-        tokens.push(t_id1.clone());
-        tokens.push(t_dot.clone());
-        tokens.push(t_id1.clone());
-        tokens.push(t_lbrack.clone());
-        // tokens.push(t_rbrack);
-        // tokens.push(t_dot);
-        // tokens.push(t_id1.clone());
-        // tokens.push(t_lbrack);
-        // tokens.push(t_lpar);
-        // tokens.push(t_comma.clone());
-        // tokens.push(t_comma);
-        // tokens.push(t_rpar);
-        // tokens.push(t_return.clone());
+        // tokens.push(t_lacc.clone());
         // tokens.push(t_semicolon.clone());
-        // tokens.push(t_else);
-        // tokens.push(t_break);
-        // tokens.push(t_semicolon);
         // tokens.push(t_racc.clone());
         // tokens.push(t_racc);
-        // tokens.push(t_mul);
-        // tokens.push(t_id1);
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_racc);
-        // tokens.push(t_char);
-        // tokens.push(t_double);
+        // tokens.push(t_eof);
 
-        let mut parser = Parser::new(tokens);
+        // let mut parser = Parser::new(tokens);
+        // assert_eq!(parser.unit(), true, "{:?}", parser.current_token());
 
-        assert_eq!(parser.expr_postfix(), true);
-        println!("{:?}", parser.current_token());
+        if let Ok(file) = File::open("./res/9.c") {
+            let reader = BufReader::new(file);
+            let mut lexer = Lexer::new(String::new());
 
+            for line in reader.lines() {
+                let line = line.unwrap();
+                lexer.set_input(line);
+
+                loop {
+                    let token = lexer.next_token();
+
+                    if token.r#type == TokenType::EOF {
+                        break;
+                    } else {
+                        tokens.push(token.clone());
+                    }
+                }
+            }
+
+            tokens.push(Token {r#type: TokenType::EOF, literal: String::from("EOF"), line: 1, column: 1});
+            // println!("{:?}", tokens);
+            let mut parser = Parser::new(tokens);
+            assert_eq!(parser.unit(), true);
+
+        } else {
+            eprintln!("Failed to open the file");
+        }
     }
 }
