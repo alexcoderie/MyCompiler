@@ -8,6 +8,7 @@ use crate::{lexer::lexer::Lexer, token::token::TokenType};
 pub mod token;
 pub mod lexer;
 pub mod parser;
+pub mod symbols;
 
 fn main() -> io::Result<()>{
     let mut output_file = fs::File::create("./res/tokens.txt")?;

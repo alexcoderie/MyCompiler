@@ -1,11 +1,22 @@
-use crate::token::token::{Token, TokenType};
+use std::borrow::BorrowMut;
+use std::sync::Mutex;
 
+use once_cell::sync::Lazy;
+
+use crate::token::token::{Token, TokenType};
+use crate::symbols::symbols::{self, Class, Memory, Symbol, SymbolTable, Type, TypeBase};
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Parser {
     tokens: Vec<Token>,
     current_token_index: usize,
     consumed_token: Option<Token>,
+    crt_depth: i32,
+    crt_struct: Option<Symbol>,
+    crt_func: Option<Symbol>,
 }
 
+static SYMBOLS: Lazy<Mutex<SymbolTable>> = Lazy::new(|| Mutex::new(SymbolTable::new()));
 impl Parser {
     /// Creates a new [`Parser`].
     pub fn new(tokens: Vec<Token>) -> Parser {
@@ -13,6 +24,9 @@ impl Parser {
             tokens,
             current_token_index: 0,
             consumed_token: None,
+            crt_depth: 0,
+            crt_struct: None,
+            crt_func: None,
         };
 
         parser
@@ -35,6 +49,26 @@ impl Parser {
             self.consumed_token = Some(token).cloned();
         }
         self.current_token_index += 1;
+    }
+
+    fn add_var(&mut self, token: Token, t: Type) {
+        let mut symbols = SYMBOLS.lock().unwrap();
+
+        if let Some(crt_struct) = &mut self.crt_struct {
+            if let Some(members) = &mut crt_struct.members {
+                if members.find_symbol(&token.literal) {
+                    println!("ERROR: Symbol redefinition: {}", token.literal);
+                    return;
+                }
+
+                let s = members.add_symbol(
+                    Symbol::new(token.literal, Class::Var, None, Some(t.clone()), self.crt_depth, None, None)
+                    );
+            }
+        }else if let Some(crt_func) = &mut self.crt_func {
+            
+        }
+
     }
 
     pub fn unit(&mut self) -> bool {
@@ -101,9 +135,31 @@ impl Parser {
 
             if self.get_token_type() == TokenType::ID {
                 self.consume();
+                let token_name = self.consumed_token.clone().unwrap().literal;
+                
 
                 if self.get_token_type() == TokenType::LACC {
                     self.consume();
+
+                    let mut symbol_table = SYMBOLS.lock().unwrap();
+                    if symbol_table.find_symbol(&token_name) {
+                        println!("ERROR: symbol redefinition: {}", token_name);
+                        return false;
+                    }
+
+                    let crt_struct = symbol_table.add_symbol(
+                            Symbol::new(
+                                token_name, 
+                                Class::Struct, 
+                                None, 
+                                None,
+                                self.crt_depth,
+                                None,
+                                None
+                                )
+                            );
+                    crt_struct.members = Some(symbols::SymbolTable { table: Vec::new()});
+                    self.crt_struct = Some(crt_struct.clone());
 
                     loop {
                         if !self.decl_var() {
@@ -118,6 +174,7 @@ impl Parser {
 
                         if self.get_token_type() == TokenType::SEMICOLON {
                             self.consume();
+                            self.crt_struct = None;
                             return true;
                         } else {
                             println!("Missing ';'!");
@@ -860,6 +917,13 @@ mod tests {
             column: 1,
         };
 
+        let t_id1 = Token {
+            r#type: TokenType::ID,
+            literal: String::from("y"),
+            line: 1,
+            column: 1,
+        };
+
         let t_semicolon = Token {
             r#type: TokenType::SEMICOLON,
             literal: String::from(""),
@@ -1022,71 +1086,47 @@ mod tests {
         };
 
         let mut tokens: Vec<Token> = Vec::new();
-        // tokens.push(t_int.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_lpar.clone());
-        // tokens.push(t_rpar.clone());
-        // tokens.push(t_lacc.clone());
-        // tokens.push(t_int);
-        // tokens.push(t_id.clone());
-        // tokens.push(t_comma.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_lbrack);
-        // tokens.push(t_ctint.clone());
-        // tokens.push(t_rbrack);
-        // tokens.push(t_comma.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_assign.clone());
-        // tokens.push(t_ctint.clone());
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_for.clone());
-        // tokens.push(t_lpar.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_assign.clone());
-        // tokens.push(t_ctint.clone());
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_id.clone());
-        // tokens.push(t_less.clone());
-        // tokens.push(t_ctint.clone());
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_rpar.clone());
-        // tokens.push(t_lacc.clone());
-        // tokens.push(t_semicolon.clone());
-        // tokens.push(t_racc.clone());
-        // tokens.push(t_racc);
-        // tokens.push(t_eof);
+        tokens.push(t_struct.clone());
+        tokens.push(t_id.clone());
+        tokens.push(t_lacc.clone());
+        tokens.push(t_racc.clone());
+        tokens.push(t_semicolon.clone());
 
-        // let mut parser = Parser::new(tokens);
-        // assert_eq!(parser.unit(), true, "{:?}", parser.current_token());
+        tokens.push(t_struct.clone());
+        tokens.push(t_id1.clone());
+        tokens.push(t_lacc.clone());
+        tokens.push(t_racc.clone());
+        tokens.push(t_semicolon.clone());
+        tokens.push(t_eof.clone());
+        let mut parser = Parser::new(tokens);
+        assert_eq!(parser.unit(), true, "{:?}", parser.current_token());
 
-        if let Ok(file) = File::open("./res/9.c") {
-            let reader = BufReader::new(file);
-            let mut lexer = Lexer::new(String::new());
-
-            for line in reader.lines() {
-                let line = line.unwrap();
-                lexer.set_input(line);
-
-                loop {
-                    let token = lexer.next_token();
-
-                    if token.r#type == TokenType::EOF {
-                        break;
-                    } else {
-                        tokens.push(token.clone());
-                    }
-                }
-            }
-
-            tokens.push(Token {r#type: TokenType::EOF, literal: String::from("EOF"), line: 1, column: 1});
-            // println!("{:?}", tokens);
-            let mut parser = Parser::new(tokens);
-            assert_eq!(parser.unit(), true);
-
-        } else {
-            eprintln!("Failed to open the file");
-        }
+        // if let Ok(file) = File::open("./res/9.c") {
+        //     let reader = BufReader::new(file);
+        //     let mut lexer = Lexer::new(String::new());
+        //
+        //     for line in reader.lines() {
+        //         let line = line.unwrap();
+        //         lexer.set_input(line);
+        //
+        //         loop {
+        //             let token = lexer.next_token();
+        //
+        //             if token.r#type == TokenType::EOF {
+        //                 break;
+        //             } else {
+        //                 tokens.push(token.clone());
+        //             }
+        //         }
+        //     }
+        //
+        //     tokens.push(Token {r#type: TokenType::EOF, literal: String::from("EOF"), line: 1, column: 1});
+        //     // println!("{:?}", tokens);
+        //     let mut parser = Parser::new(tokens);
+        //     assert_eq!(parser.unit(), true);
+        //
+        // } else {
+        //     eprintln!("Failed to open the file");
+        // }
     }
 }
