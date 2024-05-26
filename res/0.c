@@ -13,7 +13,7 @@ void main()
 {
 	int		i,s;
 	for(i=0;i<1000000;i=i+1)
-	s=sum();
+	s=1;
 	put_i(s);
 }
 

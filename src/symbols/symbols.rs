@@ -9,9 +9,9 @@ pub enum TypeBase {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Type {
-    type_base: TypeBase,
-    s: Box<Symbol>,
-    n_elements: i32,
+    pub type_base: TypeBase,
+    pub s: Option<Box<Symbol>>,
+    pub n_elements: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,16 +83,17 @@ impl SymbolTable {
         self.table.last_mut().unwrap()
     }
 
-    pub fn find_symbol(&mut self, name: &str) -> bool {
-        self.table.iter().any(|symbol| symbol.name == name)
+    pub fn find_symbol(&mut self, name: &str) -> Option<&Symbol> {
+        self.table.iter().rev().find(|symbol| symbol.name == name)
     }
 
-    pub fn delete_symbol(&mut self, name: &str) -> bool {
-        if let Some(pos) = self.table.iter().position(|symbol| symbol.name == name) {
-            self.table.remove(pos);
-            true
-        } else {
-            false
+    pub fn find_symbol_index(&mut self, name: &str) -> Option<usize> {
+        self.table.iter().position(|symbol| symbol.name == name)
+    }
+
+    pub fn delete_symbol_after(&mut self, target_symbol: &Symbol) {
+        if let Some(index) = self.find_symbol_index(&target_symbol.name) {
+            self.table.truncate(index + 1);
         }
     }
 }

@@ -1,4 +1,5 @@
 use std::borrow::BorrowMut;
+use std::ops::Deref;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -14,9 +15,10 @@ pub struct Parser {
     crt_depth: i32,
     crt_struct: Option<Symbol>,
     crt_func: Option<Symbol>,
+    current_type: Type,
+    pub symbols_table: SymbolTable,
 }
 
-static SYMBOLS: Lazy<Mutex<SymbolTable>> = Lazy::new(|| Mutex::new(SymbolTable::new()));
 impl Parser {
     /// Creates a new [`Parser`].
     pub fn new(tokens: Vec<Token>) -> Parser {
@@ -27,6 +29,12 @@ impl Parser {
             crt_depth: 0,
             crt_struct: None,
             crt_func: None,
+            current_type: Type {
+                type_base: TypeBase::Int,
+                s: None,
+                n_elements: -1,
+            },
+            symbols_table: symbols::SymbolTable { table: Vec::new() },
         };
 
         parser
@@ -51,24 +59,39 @@ impl Parser {
         self.current_token_index += 1;
     }
 
-    fn add_var(&mut self, token: Token, t: Type) {
-        let mut symbols = SYMBOLS.lock().unwrap();
-
+    fn add_var(&mut self, token: Token) {
         if let Some(crt_struct) = &mut self.crt_struct {
             if let Some(members) = &mut crt_struct.members {
-                if members.find_symbol(&token.literal) {
-                    println!("ERROR: Symbol redefinition: {}", token.literal);
+                if members.find_symbol(&token.literal).is_some() {
+                    println!("ERROR1: Symbol redefinition: {}", token.literal);
                     return;
                 }
 
                 let s = members.add_symbol(
-                    Symbol::new(token.literal, Class::Var, None, Some(t.clone()), self.crt_depth, None, None)
+                    Symbol::new(token.literal.clone(), Class::Var, None, Some(self.current_type.clone()), self.crt_depth, None, None)
                     );
             }
         }else if let Some(crt_func) = &mut self.crt_func {
-            
-        }
+            if let Some(existing_symbol) = self.symbols_table.find_symbol(&token.literal) {
+                if existing_symbol.depth == self.crt_depth {
+                    println!("ERROR2: Symbol redefinition: {}", token.literal);
+                    return;
+                }
+            } 
 
+            let s = self.symbols_table.add_symbol(
+                Symbol::new(token.literal.clone(), Class::Var, Some(Memory::Local), Some(self.current_type.clone()), self.crt_depth, None, None)
+                );
+        } else {
+            if self.symbols_table.find_symbol(&token.literal).is_some() {
+                println!("ERROR3: Symbol redefinition: {}", token.literal);
+                return;
+            }
+
+            let s = self.symbols_table.add_symbol(
+                Symbol::new(token.literal.clone(), Class::Var, Some(Memory::Global), Some(self.current_type.clone()), self.crt_depth, None, None)
+                );
+        }
     }
 
     pub fn unit(&mut self) -> bool {
@@ -97,16 +120,19 @@ impl Parser {
 
         if self.get_token_type() == TokenType::INT {
             self.consume();
+            self.current_type.type_base = TypeBase::Int;
             return true;
         }
 
         if self.get_token_type() == TokenType::DOUBLE {
             self.consume();
+            self.current_type.type_base = TypeBase::Double;
             return true;
         }
 
         if self.get_token_type() == TokenType::CHAR {
             self.consume();
+            self.current_type.type_base = TypeBase::Char;
             return true;
         }
 
@@ -115,16 +141,27 @@ impl Parser {
 
             if self.get_token_type() == TokenType::ID {
                 self.consume();
-                return true;
+                let token_name = self.consumed_token.clone().unwrap().literal;
+
+                if let Some(s) = self.symbols_table.find_symbol(&token_name) {
+                    if s.class != Class::Struct {
+                        println!("ERROR: {} is not a struct", token_name);
+                        return false;
+                    }
+                    self.current_type.type_base = TypeBase::Struct;
+                    self.current_type.s = Some(Box::new(s.clone()));
+                    return true;
+                } else {
+                    println!("Undefined symbol: {}", token_name);
+                }
             } else {
                 self.current_token_index = start_token;
                 println!("Missing identifier!");
-                return false;
             }
         }
         
         println!("Should be INT, DOUBLE, CHAR or STRUCT");
-        false
+        return false;
     }
 
     pub fn decl_struct(&mut self) -> bool {
@@ -141,13 +178,12 @@ impl Parser {
                 if self.get_token_type() == TokenType::LACC {
                     self.consume();
 
-                    let mut symbol_table = SYMBOLS.lock().unwrap();
-                    if symbol_table.find_symbol(&token_name) {
+                    if self.symbols_table.find_symbol(&token_name).is_some() {
                         println!("ERROR: symbol redefinition: {}", token_name);
                         return false;
                     }
 
-                    let crt_struct = symbol_table.add_symbol(
+                    let crt_struct = self.symbols_table.add_symbol(
                             Symbol::new(
                                 token_name, 
                                 Class::Struct, 
@@ -201,9 +237,11 @@ impl Parser {
 
         if self.type_base() {
             if self.get_token_type() == TokenType::ID {
-
                 self.consume();
+                let token_name = self.consumed_token.clone();
+                println!("Consumed token : {:?}", token_name);
                 self.array_decl();
+                self.add_var(token_name.expect("Add variable into symbol table"));
 
                 loop {
                     if self.get_token_type() == TokenType::COMMA {
@@ -211,7 +249,10 @@ impl Parser {
 
                         if self.get_token_type() == TokenType::ID {
                             self.consume();
+                            let token_name = self.consumed_token.clone();
+                            println!("Consumed token : {:?}", token_name);
                             self.array_decl();
+                            self.add_var(token_name.expect("Add variable into symbol table"));
                         } else {
                             println!("Comma should be followed by an argument!");
                             self.current_token_index = start_token;
@@ -245,7 +286,7 @@ impl Parser {
         if self.get_token_type() == TokenType::LBRACKET {
             self.consume();
             self.expr();
-            println!("{:?}", self.current_token());
+            self.current_type.n_elements = 0;
 
             if self.get_token_type() == TokenType::RBRACKET {
                 self.consume();
@@ -273,12 +314,16 @@ impl Parser {
     fn decl_func(&mut self) -> bool {
         let start_token = self.current_token_index;
 
+        println!("IN DECL_FUNC");
         if self.type_base() {
             if self.get_token_type() == TokenType::MUL {
                 self.consume();
+                self.current_type.n_elements = 0;
             }
         } else if self.get_token_type() == TokenType::VOID {
             self.consume();
+            println!("Void token: {:?}", self.consumed_token);
+            self.current_type.type_base = TypeBase::Void;
         } else {
             println!("Cannot declare a funcion without a type!");
             return false;
@@ -286,9 +331,31 @@ impl Parser {
 
         if self.get_token_type() == TokenType::ID {
             self.consume();
+            let token_name = self.consumed_token.clone().unwrap().literal;
 
             if self.get_token_type() == TokenType::LPAR {
                 self.consume();
+
+                if self.symbols_table.find_symbol(&token_name).is_some() {
+                    println!("ERROR: symbol redefinition: {}", token_name);
+                    return false;
+                }
+
+                let crt_func = self.symbols_table.add_symbol(
+                        Symbol::new(
+                            token_name, 
+                            Class::Func, 
+                            None, 
+                            None,
+                            self.crt_depth,
+                            None,
+                            None
+                            )
+                        );
+                crt_func.args = Some(symbols::SymbolTable { table: Vec::new()});
+                crt_func.r#type = Some(self.current_type.clone());
+                self.crt_func = Some(crt_func.clone());
+                self.crt_depth += 1;
 
                 if self.func_arg() {
                     loop {
@@ -310,7 +377,15 @@ impl Parser {
 
                 if self.get_token_type() == TokenType::RPAR {
                     self.consume();
-                    return self.stm_compound();
+                    self.crt_depth -= 1;
+                    if !self.stm_compound() {
+                        return false;
+                    }
+                    
+                    if let Some(crt_func) = &self.crt_func {
+                        self.symbols_table.delete_symbol_after(crt_func);
+                    }
+                    self.crt_func = None;
 
                 } else {
                     println!("Expecting ')' after function arguments!");
@@ -332,6 +407,30 @@ impl Parser {
         if self.type_base() {
             if self.get_token_type() == TokenType::ID {
                 self.consume();
+                let token_name = self.consumed_token.clone().unwrap().literal;
+                let s = self.symbols_table.add_symbol(
+                        Symbol::new(
+                            token_name.clone(), 
+                            Class::Var, 
+                            Some(Memory::Arg), 
+                            Some(self.current_type.clone()),
+                            self.crt_depth,
+                            None,
+                            None
+                            )
+                        );
+                
+                let s = <Option<Symbol> as Clone>::clone(&self.crt_func).unwrap().args.expect("Adding arguments into CrtFunc->Args").add_symbol(
+                        Symbol::new(
+                            token_name, 
+                            Class::Var, 
+                            Some(Memory::Arg), 
+                            Some(self.current_type.clone()),
+                            self.crt_depth,
+                            None,
+                            None
+                            )
+                        );
                 self.array_decl();
 
                 return true;
@@ -511,6 +610,8 @@ impl Parser {
         if self.get_token_type() == TokenType::LACC {
             self.consume();
 
+            let start = self.symbols_table.table.last().cloned();
+            self.crt_depth += 1;
             loop {
                 if self.decl_var() {
                     continue;
@@ -523,6 +624,11 @@ impl Parser {
 
             if self.get_token_type() == TokenType::RACC {
                 self.consume();
+                self.crt_depth -= 1;
+
+                if let Some(start) = start {
+                    self.symbols_table.delete_symbol_after(&start);
+                }
                 return true;
             } else {
                 println!("Expected '}}' to close the compound statement!");
