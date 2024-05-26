@@ -14,7 +14,7 @@ pub struct Parser {
     consumed_token: Option<Token>,
     crt_depth: i32,
     crt_struct: Option<Symbol>,
-    crt_func: Option<Symbol>,
+    pub crt_func: Option<Symbol>,
     current_type: Type,
     pub symbols_table: SymbolTable,
 }
@@ -61,15 +61,17 @@ impl Parser {
 
     fn add_var(&mut self, token: Token) {
         if let Some(crt_struct) = &mut self.crt_struct {
-            if let Some(members) = &mut crt_struct.members {
-                if members.find_symbol(&token.literal).is_some() {
-                    println!("ERROR1: Symbol redefinition: {}", token.literal);
-                    return;
-                }
+            let crt_struct_name = crt_struct.name.clone();
+            if let Some(ref mut s_struct) = self.symbols_table.find_symbol_mut(&crt_struct_name) {
+               let struct_members = s_struct.members.as_mut().unwrap();
 
-                let s = members.add_symbol(
-                    Symbol::new(token.literal.clone(), Class::Var, None, Some(self.current_type.clone()), self.crt_depth, None, None)
-                    );
+               if struct_members.find_symbol(&token.literal).is_some() {
+                   println!("ERROR1: Symbol redefinition: {}", token.literal);
+                   return;
+               }
+               let s = struct_members.add_symbol(
+                   Symbol::new(token.literal.clone(), Class::Var, None, Some(self.current_type.clone()), self.crt_depth, None, None)
+                   );
             }
         }else if let Some(crt_func) = &mut self.crt_func {
             if let Some(existing_symbol) = self.symbols_table.find_symbol(&token.literal) {
@@ -165,6 +167,7 @@ impl Parser {
     }
 
     pub fn decl_struct(&mut self) -> bool {
+        println!("IN DECL_STRUCT");
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::STRUCT {
@@ -234,6 +237,7 @@ impl Parser {
 
     fn decl_var(&mut self) -> bool {
         let start_token = self.current_token_index;
+        println!("IN DECL_VAR");
 
         if self.type_base() {
             if self.get_token_type() == TokenType::ID {
@@ -341,20 +345,17 @@ impl Parser {
                     return false;
                 }
 
-                let crt_func = self.symbols_table.add_symbol(
-                        Symbol::new(
+                self.crt_func = Some(Symbol::new(
                             token_name, 
                             Class::Func, 
                             None, 
-                            None,
+                            Some(self.current_type.clone()),
                             self.crt_depth,
-                            None,
+                            Some(symbols::SymbolTable { table: Vec::new()}),
                             None
                             )
-                        );
-                crt_func.args = Some(symbols::SymbolTable { table: Vec::new()});
-                crt_func.r#type = Some(self.current_type.clone());
-                self.crt_func = Some(crt_func.clone());
+                    );
+                self.symbols_table.add_symbol(self.crt_func.clone().expect("Adding function symbol into the table"));
                 self.crt_depth += 1;
 
                 if self.func_arg() {
@@ -380,12 +381,14 @@ impl Parser {
                     self.crt_depth -= 1;
                     if !self.stm_compound() {
                         return false;
+                    } else {
+                        if let Some(crt_func) = &self.crt_func {
+                            self.symbols_table.delete_symbol_after(crt_func);
+                        }
+                        self.crt_func = None;
+                        return true;
                     }
                     
-                    if let Some(crt_func) = &self.crt_func {
-                        self.symbols_table.delete_symbol_after(crt_func);
-                    }
-                    self.crt_func = None;
 
                 } else {
                     println!("Expecting ')' after function arguments!");
@@ -419,18 +422,23 @@ impl Parser {
                             None
                             )
                         );
-                
-                let s = <Option<Symbol> as Clone>::clone(&self.crt_func).unwrap().args.expect("Adding arguments into CrtFunc->Args").add_symbol(
-                        Symbol::new(
-                            token_name, 
-                            Class::Var, 
-                            Some(Memory::Arg), 
-                            Some(self.current_type.clone()),
-                            self.crt_depth,
-                            None,
-                            None
-                            )
-                        );
+
+                if let Some(crt_func) = &self.crt_func {
+                    let crt_func_name = crt_func.name.clone();
+                    if let Some(ref mut func) = self.symbols_table.find_symbol_mut(&crt_func_name) {
+                        let func_args = func.args.as_mut().unwrap();
+                        func_args.add_symbol(Symbol::new(
+                                token_name.clone(),
+                                Class::Var, 
+                                Some(Memory::Arg), 
+                                Some(self.current_type.clone()), 
+                                self.crt_depth, 
+                                None, 
+                                None
+                                )
+                            );
+                    }
+                }
                 self.array_decl();
 
                 return true;

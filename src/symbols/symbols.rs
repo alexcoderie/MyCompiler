@@ -87,6 +87,10 @@ impl SymbolTable {
         self.table.iter().rev().find(|symbol| symbol.name == name)
     }
 
+    pub fn find_symbol_mut(&mut self, name: &str) -> Option<&mut Symbol> {
+        self.table.iter_mut().rev().find(|symbol| symbol.name == name)
+    }
+
     pub fn find_symbol_index(&mut self, name: &str) -> Option<usize> {
         self.table.iter().position(|symbol| symbol.name == name)
     }
