@@ -1,11 +1,12 @@
 use std::borrow::BorrowMut;
+use std::char;
 use std::ops::Deref;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
 use crate::token::token::{Token, TokenType};
-use crate::symbols::symbols::{self, Class, Memory, Symbol, SymbolTable, Type, TypeBase};
+use crate::symbols::symbols::{self, Class, CtVal, Memory, RetVal, Symbol, SymbolTable, Type, TypeBase};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parser {
@@ -17,6 +18,7 @@ pub struct Parser {
     pub crt_func: Option<Symbol>,
     current_type: Type,
     pub symbols_table: SymbolTable,
+    rv: RetVal,
 }
 
 impl Parser {
@@ -35,6 +37,12 @@ impl Parser {
                 n_elements: -1,
             },
             symbols_table: symbols::SymbolTable { table: Vec::new() },
+            rv: RetVal {
+               r#type: None,
+               is_lval: false,
+               is_ctval:false,
+               ct_val: None,
+            }
         };
 
         parser
@@ -93,6 +101,50 @@ impl Parser {
             let s = self.symbols_table.add_symbol(
                 Symbol::new(token.literal.clone(), Class::Var, Some(Memory::Global), Some(self.current_type.clone()), self.crt_depth, None, None)
                 );
+        }
+    }
+
+    fn cast_var(dst: &mut Type, src: &Type) {
+        if src.n_elements > -1 {
+            if dst.n_elements > -1 {
+                if src.type_base != dst.type_base {
+                    println!("ERROR: An array cannot be converted to an array of another type");
+                    return;
+                }
+            } else {
+                println!("ERROR: An array cannot be converted to a non-array");
+                return;
+            }
+        } else {
+            if dst.n_elements > -1 {
+                println!("ERROR: A non-array cannot be converted to an array");
+                return;
+            }
+        }
+
+        match src.type_base {
+            TypeBase::Char | TypeBase::Int | TypeBase::Double => {
+                match dst.type_base {
+                    TypeBase::Char | TypeBase::Int | TypeBase::Double => return,
+                    _ => {
+                        println!("ERROR: Incompatible types");
+                        return;
+                    }
+                }
+            }
+            TypeBase::Struct => {
+                if let TypeBase::Struct = dst.type_base {
+                    if src.s != dst.s {
+                        println!("ERROR: A structure cannot be converted to another one");
+                        return;
+                    }
+                    return;
+                } else {
+                    println!("ERROR: Incompatible types");
+                    return;
+                }
+            }
+            TypeBase::Void => (),
         }
     }
 
@@ -649,7 +701,7 @@ impl Parser {
         }
     }
 
-    fn expr(&mut self) -> bool {
+    fn expr(&mut self, rv: &mut RetVal) -> bool {
         return self.expr_assign();
     }
 
@@ -924,27 +976,59 @@ impl Parser {
         }
     }
 
-    fn expr_primary(&mut self) -> bool {
+    fn expr_primary(&mut self, ret_val: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
+        let mut arg = self.rv.clone();
 
         match self.get_token_type() {
             TokenType::ID => {
                 self.consume();
+                let token_name = self.consumed_token.clone().unwrap().literal;
+                let symbol = self.symbols_table.find_symbol(&token_name);
+                if symbol.is_none() {
+                    println!("Undefined symbol {}", token_name);
+                    return false;
+                }
+
+                let symbol = symbol.unwrap();
+                ret_val.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
+                ret_val.is_ctval = false;
+                ret_val.is_lval = true;
                 
                 if self.get_token_type() == TokenType::LPAR {
                     self.consume();
+                    let mut crt_def_args = Some(symbol.args.unwrap().table.iter());
+                    if symbol.class != Class::Func || symbol.class != Class::ExtFunc {
+                        println!("Call to a non-function {}", token_name);
+                        return false;
+                    }
 
-                    if self.expr() {
+                    if self.expr(&mut arg) {
+                        if let Some(crt_arg) = crt_def_args.expect("No elements available").next() {
+                            if let (Some(crt_arg_type), Some(arg_type)) = (&mut crt_arg.r#type, &arg.r#type) {
+                                Parser::cast_var(crt_arg_type, arg_type);
+                            }
+                        } else {
+                            println!("Too many arguments in call");
+                            return false;
+                        }
+
                         loop {
                             if self.get_token_type() == TokenType::COMMA {
                                 self.consume();
 
-                                if !self.expr() {
+                                if !self.expr(&mut arg) {
                                     println!("Comma should be followed by another expression!");
                                     self.current_token_index = start_token;
                                     return false;
-                                } else {
+                                } else if let Some(crt_arg) = crt_def_args.expect("No elements available").next() {
+                                    if let (Some(crt_arg_type), Some(arg_type)) = (&mut crt_arg.r#type, &arg.r#type) {
+                                        Parser::cast_var(crt_arg_type, arg_type);
+                                    }
                                     continue;
+                                } else {
+                                    println!("Too many arguments in call");
+                                    return false;
                                 }
                             } else {
                                 break;
@@ -954,17 +1038,96 @@ impl Parser {
 
                     if self.get_token_type() == TokenType::RPAR {
                         self.consume();
+                        if crt_def_args.expect("There are still elements").next().is_some() {
+                            println!("Too few arguments in call!");
+                            return false;
+                        }
+
+                        ret_val.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
+                        ret_val.is_ctval = false;
+                        ret_val.is_lval = false;
                     } else {
                         println!("Expected ')' to close the expression!");
                         self.current_token_index = start_token;
                         return false;
                     }
+                } else if symbol.class == Class::Func || symbol.class == Class::ExtFunc {
+                    println!("Missing call for function {}", token_name);
+                    return false;
                 }
 
                 return true;
             }
 
-            TokenType::CT_INT | TokenType::CT_REAL | TokenType::CT_CHAR | TokenType::CT_STRING => {
+            TokenType::CT_INT => {
+                self.consume();
+                ret_val.r#type = Some(Type::new(TypeBase::Int, -1));
+                if let Some(token) = self.consumed_token.clone() {
+                    match token.literal.parse::<i64>() {
+                        Ok(number) => {
+                            ret_val.ct_val = Some(CtVal::Int(number));
+                        },
+                        Err(e) => {
+                            println!("Failed to parse number: {}", e);
+                            ret_val.ct_val = None;
+                        }
+                    }
+                } else {
+                    println!("No token consumed");
+                    ret_val.r#type = None;
+                }
+                ret_val.is_ctval = true;
+                ret_val.is_lval = false;
+
+                return true;
+            }
+
+            TokenType::CT_REAL => {
+                self.consume();
+                ret_val.r#type = Some(Type::new(TypeBase::Double, -1));
+                if let Some(token) = self.consumed_token.clone() {
+                    match token.literal.parse::<f64>() {
+                        Ok(number) => {
+                            ret_val.ct_val = Some(CtVal::Double(number));
+                        },
+                        Err(e) => {
+                            println!("Failed to parse number: {}", e);
+                            ret_val.ct_val = None;
+                        }
+                    }
+                } else {
+                    println!("No token consumed");
+                    ret_val.r#type = None;
+                }
+                ret_val.is_ctval = true;
+                ret_val.is_lval = false;
+
+                return true;
+            }
+
+            TokenType::CT_CHAR => {
+                self.consume();
+                ret_val.r#type = Some(Type::new(TypeBase::Char, -1));
+                if let Some(token) = self.consumed_token.clone() {
+                    token.literal.
+                    match token.literal.parse::<char>() {
+                        Ok(number) => {
+                            ret_val.ct_val = Some(CtVal::Double(number));
+                        },
+                        Err(e) => {
+                            println!("Failed to parse number: {}", e);
+                            ret_val.ct_val = None;
+                        }
+                    }
+                } else {
+                    println!("No token consumed");
+                    ret_val.r#type = None;
+                }
+                ret_val.is_ctval = true;
+                ret_val.is_lval = false;
+
+                return true;
+            }| TokenType::CT_STRING => {
                 self.consume();
                 return true;
             }

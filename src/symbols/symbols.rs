@@ -14,6 +14,18 @@ pub struct Type {
     pub n_elements: i32,
 }
 
+impl Type {
+    pub fn new(type_base: TypeBase, n_elements: i32) -> Type {
+        let mut created_type = Type {
+           type_base,
+           s: None,
+           n_elements,
+        };
+
+        created_type
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Class {
     Var,
@@ -30,6 +42,22 @@ pub enum Memory {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum CtVal {
+    Int(i64),
+    Double(f64),
+    Char(char),
+    Str(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetVal {
+    pub r#type: Option<Type>,
+    pub is_lval: bool,
+    pub is_ctval: bool,
+    pub ct_val: Option<CtVal>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
     pub name: String,
     pub class: Class,
@@ -39,6 +67,7 @@ pub struct Symbol {
     pub args: Option<SymbolTable>,
     pub members: Option<SymbolTable>,
 }
+
 
 impl Symbol {
     pub fn new(name: String, 
