@@ -357,7 +357,7 @@ impl Lexer {
         }
 
         self.read_position -= 1;
-        Some(self.input[position..self.position].to_string())
+        Some(self.input[position + 1..self.position - 1].to_string())
     }
 
     fn read_string(&mut self) -> Option<String> {
@@ -381,7 +381,7 @@ impl Lexer {
                 self.read_char();
 
                 self.read_position -= 1;
-                return Some(self.input[position..self.position].to_string());
+                return Some(self.input[position + 1..self.position - 1].to_string());
             } else if ch.is_ascii() {
                 self.read_char();
             } else {

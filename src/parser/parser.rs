@@ -104,7 +104,7 @@ impl Parser {
         }
     }
 
-    fn cast_var(dst: &mut Type, src: &Type) {
+    fn cast_var(dst: &Type, src: &Type) {
         if src.n_elements > -1 {
             if dst.n_elements > -1 {
                 if src.type_base != dst.type_base {
@@ -148,7 +148,64 @@ impl Parser {
         }
     }
 
+    fn add_ext_func(&mut self, name: &str, func_type: Type) -> &mut Symbol {
+        self.symbols_table.add_symbol(
+            Symbol::new(
+                name.to_string(),
+                Class::ExtFunc,
+                None,
+                Some(func_type),
+                self.crt_depth,
+                Some(symbols::SymbolTable {table: Vec::new()}),
+                None,
+                )
+            )
+    }
+
+    fn add_func_arg(&mut self, symbol:&mut Symbol, name: &str, arg_type: Type) {
+        if let Some(ref mut func) = self.symbols_table.find_symbol_mut(&symbol.name) {
+            let func_args = func.args.as_mut().unwrap();
+            func_args.add_symbol(
+                Symbol::new(
+                    name.to_string(),
+                    Class::Var,
+                    None,
+                    Some(arg_type),
+                    self.crt_depth,
+                    None,
+                    None,
+                    )
+                );
+        }
+    }
+
+    fn add_ext_functions(&mut self) {
+        let mut s = self.add_ext_func("put_s", Type::new(TypeBase::Void, -1)).to_owned();
+        self.add_func_arg(&mut s, "s", Type::new(TypeBase::Char, 0));
+
+        let mut s = self.add_ext_func("get_s", Type::new(TypeBase::Void, -1)).to_owned();
+        self.add_func_arg(&mut s, "s", Type::new(TypeBase::Char, 0));
+
+        let mut s = self.add_ext_func("put_i", Type::new(TypeBase::Void, -1)).to_owned();
+        self.add_func_arg(&mut s, "i", Type::new(TypeBase::Int, 0));
+
+        let mut s = self.add_ext_func("get_i", Type::new(TypeBase::Int, -1)).to_owned();
+
+        let mut s = self.add_ext_func("put_d", Type::new(TypeBase::Void, -1)).to_owned();
+        self.add_func_arg(&mut s, "d", Type::new(TypeBase::Double, 0));
+
+        let mut s = self.add_ext_func("get_d", Type::new(TypeBase::Double, -1)).to_owned();
+
+        let mut s = self.add_ext_func("put_c", Type::new(TypeBase::Void, -1)).to_owned();
+        self.add_func_arg(&mut s, "c", Type::new(TypeBase::Char, 0));
+
+        let mut s = self.add_ext_func("get_c", Type::new(TypeBase::Char, -1)).to_owned();
+
+
+    }
+
     pub fn unit(&mut self) -> bool {
+        self.add_ext_functions();
         loop {
             if self.decl_struct() {
                 continue;
@@ -338,10 +395,12 @@ impl Parser {
 
     fn array_decl(&mut self) -> bool {
         let start_token = self.current_token_index;
+        let mut rv_copy = self.rv.clone();
 
         if self.get_token_type() == TokenType::LBRACKET {
             self.consume();
-            self.expr();
+            self.expr(&mut rv_copy);
+            self.rv = rv_copy;
             self.current_type.n_elements = 0;
 
             if self.get_token_type() == TokenType::RBRACKET {
@@ -506,6 +565,7 @@ impl Parser {
 
     fn stm(&mut self) -> bool {
         let start_token = self.current_token_index;
+        let mut rv_copy = self.rv.clone();
 
         match self.get_token_type() {
             TokenType::LACC => {
@@ -522,7 +582,13 @@ impl Parser {
                 if self.get_token_type() == TokenType::LPAR {
                     self.consume();
 
-                    if self.expr() {
+                    if self.expr(&mut rv_copy) {
+                        if rv_copy.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                            println!("A structure cannot be logically tested");
+                            return false;
+                        }
+                        self.rv = rv_copy;
+
                         if self.get_token_type() == TokenType::RPAR {
                             self.consume();
                             
@@ -535,7 +601,7 @@ impl Parser {
                                         return false;
                                     }
                                 }
-
+                                
                                 return true;
                             } else {
                                 println!("Missing statement!");
@@ -560,7 +626,13 @@ impl Parser {
                 if self.get_token_type() == TokenType::LPAR {
                     self.consume();
 
-                    if self.expr() {
+                    if self.expr(&mut rv_copy) {
+                        if rv_copy.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                            println!("A structure cannot be logically tested");
+                            return false;
+                        }
+                        self.rv = rv_copy;
+
                         if self.get_token_type() == TokenType::RPAR {
                             self.consume();
 
@@ -588,15 +660,44 @@ impl Parser {
 
                 if self.get_token_type() == TokenType::LPAR {
                     self.consume();
-                    self.expr();
+
+                    let mut rv1 = RetVal {
+                        r#type: None,
+                        is_ctval: false,
+                        is_lval: false,
+                        ct_val: None,
+                    };
+
+                    self.expr(&mut rv1);
 
                     if self.get_token_type() == TokenType::SEMICOLON {
                         self.consume();
-                        self.expr();
+
+                        let mut rv2 = RetVal {
+                            r#type: None,
+                            is_ctval: false,
+                            is_lval: false,
+                            ct_val: None,
+                        };
+                        self.expr(&mut rv2);
+
+                        if let Some(rv_type) = &rv2.r#type {
+                            if rv_type.type_base == TypeBase::Struct {
+                                println!("A structure cannot be logically tested");
+                                return false;
+                            }
+                        }
 
                         if self.get_token_type() == TokenType::SEMICOLON {
                             self.consume();
-                            self.expr();
+
+                            let mut rv3 = RetVal {
+                                r#type: None,
+                                is_ctval: false,
+                                is_lval: false,
+                                ct_val: None,
+                            };
+                            self.expr(&mut rv3);
 
                             if self.get_token_type() == TokenType::RPAR {
                                 self.consume();
@@ -639,7 +740,19 @@ impl Parser {
 
             TokenType::RETURN => {
                 self.consume();
-                self.expr();
+                if self.expr(&mut rv_copy) {
+                    self.rv = rv_copy.clone();
+
+                    if let Some(crt_func) = self.crt_func.clone() {
+                        if crt_func.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Void) && rv_copy.r#type.is_some() {
+                            println!("A void function cannot return a value");
+                            return false;
+                        }
+                        if let Some(ref rv_type) = rv_copy.r#type {
+                            Parser::cast_var(&crt_func.r#type.unwrap(), rv_type);
+                        }
+                    }
+                }
 
                 if self.get_token_type() == TokenType::SEMICOLON {
                     self.consume();
@@ -652,7 +765,9 @@ impl Parser {
             }
             
             _ => {
-                self.expr();
+                self.expr(&mut rv_copy);
+                self.rv = rv_copy;
+
                 if self.get_token_type() == TokenType::SEMICOLON {
                     self.consume();
                     return true;
@@ -702,46 +817,91 @@ impl Parser {
     }
 
     fn expr(&mut self, rv: &mut RetVal) -> bool {
-        return self.expr_assign();
+        return self.expr_assign(rv);
     }
 
-    fn expr_assign(&mut self) -> bool {
+    fn expr_assign(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
-        if self.expr_unary() {
+        if self.expr_unary(rv) {
             if self.get_token_type() == TokenType::ASSIGN {
                 self.consume();
 
-                if self.expr_assign() {
+                let token_type = self.consumed_token.clone().unwrap().r#type;
+
+                let mut rve = RetVal {
+                    r#type: None,
+                    is_ctval: false,
+                    is_lval: false,
+                    ct_val: None,
+                };
+
+                if self.expr_assign(&mut rve) {
+                    if !rv.is_lval {
+                        println!("Cannot assign to a non-lval");
+                        return false;
+                    }
+
+                    if rv.r#type.as_ref().map_or(false, |t| t.n_elements > -1) 
+                        || rve.r#type.as_ref().map_or(false, |t| t.n_elements > -1) 
+                    {
+                        println!("Arrays cannot be assigned");
+                        return false;
+                    }
+
+                    Parser::cast_var(rv.r#type.as_mut().unwrap(), rve.r#type.as_ref().unwrap());
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+
                     return true;
                 } else {
                     return false
                 }
             } else {
                 self.current_token_index = start_token;
-                return self.expr_or();
+                return self.expr_or(rv);
             }
         }
 
         return false;
     }
 
-    fn expr_or(&mut self) -> bool {
-        if self.expr_and() {
-            return self.expr_or_tail();
+    fn expr_or(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_and(rv) {
+            return self.expr_or_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_or_tail(&mut self) -> bool {
+    fn expr_or_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::OR {
             self.consume();
 
-            if self.expr_and() {
-                return self.expr_or_tail(); 
+            let token_type = self.consumed_token.clone().unwrap().r#type;
+
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_and(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("A structure cannot be logically tested");
+                        return false;
+                    }
+
+                    rv.r#type = Some(Type::new(TypeBase::Int, -1));
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+
+                return self.expr_or_tail(rv); 
             } else {
                 self.current_token_index = start_token;
                 return false;
@@ -751,22 +911,42 @@ impl Parser {
         }
     }
 
-    fn expr_and(&mut self) -> bool {
-        if self.expr_eq() {
-            return self.expr_and_tail()
+    fn expr_and(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_eq(rv) {
+            return self.expr_and_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_and_tail(&mut self) -> bool {
+    fn expr_and_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::AND {
             self.consume();
 
-            if self.expr_eq() {
-                return self.expr_and_tail();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
+
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_eq(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("A structure cannot be logically tested");
+                        return false;
+                    }
+
+                    rv.r#type = Some(Type::new(TypeBase::Int, -1));
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+
+                return self.expr_and_tail(rv);
             } else {
                 self.current_token_index = start_token;
                 return false;
@@ -776,15 +956,15 @@ impl Parser {
         }
     }
 
-    fn expr_eq(&mut self) -> bool {
-        if self.expr_rel() {
-            return self.expr_eq_tail();
+    fn expr_eq(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_rel(rv) {
+            return self.expr_eq_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_eq_tail(&mut self) -> bool {
+    fn expr_eq_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::EQUAL 
@@ -792,8 +972,28 @@ impl Parser {
         {
             self.consume();
 
-            if self.expr_rel() {
-                return self.expr_eq_tail();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
+
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_rel(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("A structure cannot be compared");
+                        return false;
+                    }
+
+                    rv.r#type = Some(Type::new(TypeBase::Int, -1));
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+
+                return self.expr_eq_tail(rv);
             } else {
                 self.current_token_index = start_token;
                 return false;
@@ -803,15 +1003,15 @@ impl Parser {
         }
     }
 
-    fn expr_rel(&mut self) -> bool {
-        if self.expr_add() {
-            return self.expr_rel_tail();
+    fn expr_rel(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_add(rv) {
+            return self.expr_rel_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_rel_tail(&mut self) -> bool {
+    fn expr_rel_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::LESS 
@@ -821,8 +1021,32 @@ impl Parser {
         {
             self.consume();
 
-            if self.expr_add() {
-                return self.expr_rel_tail();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
+
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_add(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.n_elements > -1 || rve.r#type.as_ref().map_or(false, |t| t.n_elements > -1) {
+                        println!("An array cannot be compared");
+                        return false;
+                    }
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("A structure cannot be compared");
+                        return false;
+                    }
+
+                    rv.r#type = Some(Type::new(TypeBase::Int, -1));
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+
+                return self.expr_rel_tail(rv);
             } else {
                 self.current_token_index = start_token;
                 return false;
@@ -832,15 +1056,15 @@ impl Parser {
         }
     }
 
-    fn expr_add(&mut self) -> bool {
-        if self.expr_mul() {
-            return self.expr_add_tail();
+    fn expr_add(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_mul(rv) {
+            return self.expr_add_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_add_tail(&mut self) -> bool {
+    fn expr_add_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::ADD 
@@ -848,8 +1072,30 @@ impl Parser {
         {
             self.consume();
 
-            if self.expr_mul() {
-                return self.expr_add_tail();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
+
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_mul(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.n_elements > -1 || rve.r#type.as_ref().map_or(false, |t| t.n_elements > -1) {
+                        println!("An array cannot be added or substracted");
+                        return false;
+                    }
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("An structure cannot be added or substracted");
+                        return false;
+                    }
+
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+                return self.expr_add_tail(rv);
             } else {
                 self.current_token_index = start_token;
                 return false;
@@ -859,24 +1105,45 @@ impl Parser {
         }
     }
 
-    fn expr_mul(&mut self) -> bool {
-        if self.expr_cast() {
-            return self.expr_mul_tail();
+    fn expr_mul(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_cast(rv) {
+            return self.expr_mul_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_mul_tail(&mut self) -> bool {
+    fn expr_mul_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::MUL 
             || self.get_token_type() == TokenType::DIV 
         {
             self.consume();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
 
-            if self.expr_cast() {
-                return self.expr_mul_tail();
+            let mut rve = RetVal {
+                r#type: None,
+                is_ctval: false,
+                is_lval: false,
+                ct_val: None,
+            };
+
+            if self.expr_cast(&mut rve) {
+                if let Some(rv_type) = &rv.r#type {
+                    if rv_type.n_elements > -1 || rve.r#type.as_ref().map_or(false, |t| t.n_elements > -1) {
+                        println!("An array cannot be multiplied or divided");
+                        return false;
+                    }
+                    if rv_type.type_base == TypeBase::Struct || rve.r#type.as_ref().map_or(false, |t| t.type_base == TypeBase::Struct) {
+                        println!("A structure cannot be multiplied or divided");
+                        return false;
+                    }
+
+                    rv.is_ctval = false;
+                    rv.is_lval = false;
+                }
+                return self.expr_mul_tail(rv);
             } else {
                 self.current_token_index = start_token;
                 return false
@@ -886,7 +1153,7 @@ impl Parser {
         }
     }
 
-    fn expr_cast(&mut self) -> bool {
+    fn expr_cast(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::LPAR {
@@ -895,7 +1162,25 @@ impl Parser {
             if self.type_name() {
                 if self.get_token_type() == TokenType::RPAR {
                     self.consume();
-                    return self.expr_cast();
+
+                    let mut rve = RetVal {
+                        r#type: None,
+                        is_lval: false,
+                        is_ctval: false,
+                        ct_val: None,
+                    };
+
+                    if self.expr_cast(&mut rve) {
+                        let mut current_type = self.current_type.clone();
+                        Parser::cast_var(&mut current_type, rve.r#type.as_ref().unwrap());
+                        rv.r#type = Some(current_type.clone());
+                        rv.is_ctval = false;
+                        rv.is_lval = false;
+
+                        return true;
+                    } else {
+                        return false;
+                    }
                 } else {
                     println!("Expected ')' to close the expression!");
                     self.current_token_index = start_token;
@@ -907,17 +1192,41 @@ impl Parser {
                 return false;
             }
         } else {
-            return self.expr_unary();
+            return self.expr_unary(rv);
         }
     }
 
-    fn expr_unary(&mut self) -> bool {
+    fn expr_unary(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         if self.get_token_type() == TokenType::SUB || self.get_token_type() == TokenType::NOT {
             self.consume();
+            let token_type = self.consumed_token.clone().unwrap().r#type;
 
-            if self.expr_unary() {
+            if self.expr_unary(rv) {
+                if token_type == TokenType::SUB {
+                    if let Some(t) = &rv.r#type {
+                        if t.n_elements >= 0 {
+                            println!("unary '-' cannot be applied to an array");
+                            return false;
+                        }
+                        if t.type_base == TypeBase::Struct {
+                            println!("unary '-' cannot be applied to a struct");
+                            return false;
+                        }
+                    }
+                } else if token_type == TokenType::NOT {
+                    if let Some(t) = &rv.r#type {
+                        if t.type_base == TypeBase::Struct {
+                            println!("'!' cannot be applied to a struct");
+                            return false;
+                        }
+                    }
+                    rv.r#type = Some(Type::new(TypeBase::Int, -1));
+                }
+                rv.is_ctval = false;
+                rv.is_lval = false;
+
                 return true;
             } else {
                 println!("Invalid expression after uanry operator");
@@ -925,29 +1234,48 @@ impl Parser {
                 return false;
             }
         } else {
-            return self.expr_postfix();
+            return self.expr_postfix(rv);
         }
     }
 
-    fn expr_postfix(&mut self) -> bool {
-        if self.expr_primary() {
-            return self.expr_postfix_tail();
+    fn expr_postfix(&mut self, rv: &mut RetVal) -> bool {
+        if self.expr_primary(rv) {
+            return self.expr_postfix_tail(rv);
         } else {
             return false;
         }
     }
 
-    fn expr_postfix_tail(&mut self) -> bool {
+    fn expr_postfix_tail(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
 
         match self.get_token_type() {
             TokenType::LBRACKET => {
                 self.consume();
 
-                if self.expr() {
+                let mut rve = RetVal {
+                    r#type: None,
+                    is_lval: false,
+                    is_ctval: false,
+                    ct_val: None,
+                };
+
+                if self.expr(&mut rve) {
+                    if rv.r#type.as_ref().map_or(true, |t| t.n_elements < 0) {
+                        println!("Only an array can be indexed");
+                        return false;
+                    }
+                    
+                    let mut type_int = Type::new(TypeBase::Int, -1);
+                    Parser::cast_var(&mut type_int, rve.r#type.as_ref().unwrap());
+
+                    rv.r#type.as_mut().unwrap().n_elements = -1;
+                    rv.is_lval = true;
+                    rv.is_ctval = false;
+
                     if self.get_token_type() == TokenType::RBRACKET {
                         self.consume();
-                        return self.expr_postfix_tail();
+                        return self.expr_postfix_tail(rv);
                     } else {
                         println!("Missing ']' after array index");
                         self.current_token_index = start_token;
@@ -964,7 +1292,23 @@ impl Parser {
 
                 if self.get_token_type() == TokenType::ID {
                     self.consume();
-                    return self.expr_postfix_tail();
+                    let token_name = self.consumed_token.clone().unwrap().literal;
+                    let symbol_struct = match &rv.r#type {
+                        Some(t) => t.s.clone(),
+                        None => None,
+                    };
+
+                    if let Some(s_struct) = symbol_struct {
+                        if let Some(s_members) = s_struct.members.expect("Couldn't find symbol!").find_symbol(&token_name) {
+                            rv.r#type = Some(s_members.r#type.clone().expect("Symbol doesn't have a type!"));
+                            rv.is_lval = true;
+                            rv.is_ctval = false;
+                        } else {
+                            println!("Struct does not have a member {}", token_name);
+                            return false;
+                        }
+                    }
+                    return self.expr_postfix_tail(rv);
                 } else {
                     println!("Missing identifier after '.' operator");
                     self.current_token_index = start_token;
@@ -976,7 +1320,7 @@ impl Parser {
         }
     }
 
-    fn expr_primary(&mut self, ret_val: &mut RetVal) -> bool {
+    fn expr_primary(&mut self, rv: &mut RetVal) -> bool {
         let start_token = self.current_token_index;
         let mut arg = self.rv.clone();
 
@@ -984,75 +1328,75 @@ impl Parser {
             TokenType::ID => {
                 self.consume();
                 let token_name = self.consumed_token.clone().unwrap().literal;
-                let symbol = self.symbols_table.find_symbol(&token_name);
-                if symbol.is_none() {
-                    println!("Undefined symbol {}", token_name);
-                    return false;
-                }
-
-                let symbol = symbol.unwrap();
-                ret_val.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
-                ret_val.is_ctval = false;
-                ret_val.is_lval = true;
-                
-                if self.get_token_type() == TokenType::LPAR {
-                    self.consume();
-                    let mut crt_def_args = Some(symbol.args.unwrap().table.iter());
-                    if symbol.class != Class::Func || symbol.class != Class::ExtFunc {
-                        println!("Call to a non-function {}", token_name);
-                        return false;
-                    }
-
-                    if self.expr(&mut arg) {
-                        if let Some(crt_arg) = crt_def_args.expect("No elements available").next() {
-                            if let (Some(crt_arg_type), Some(arg_type)) = (&mut crt_arg.r#type, &arg.r#type) {
-                                Parser::cast_var(crt_arg_type, arg_type);
-                            }
-                        } else {
-                            println!("Too many arguments in call");
+                if let Some(mut symbol) = self.symbols_table.find_symbol(&token_name).cloned() {
+                    // let symbol = symbol.unwrap();
+                    rv.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
+                    rv.is_ctval = false;
+                    rv.is_lval = true;
+                    
+                    if self.get_token_type() == TokenType::LPAR {
+                        self.consume();
+                        if symbol.class != Class::Func && symbol.class != Class::ExtFunc {
+                            println!("Call to a non-function {}", token_name);
                             return false;
                         }
 
-                        loop {
-                            if self.get_token_type() == TokenType::COMMA {
-                                self.consume();
 
-                                if !self.expr(&mut arg) {
-                                    println!("Comma should be followed by another expression!");
-                                    self.current_token_index = start_token;
-                                    return false;
-                                } else if let Some(crt_arg) = crt_def_args.expect("No elements available").next() {
-                                    if let (Some(crt_arg_type), Some(arg_type)) = (&mut crt_arg.r#type, &arg.r#type) {
-                                        Parser::cast_var(crt_arg_type, arg_type);
-                                    }
-                                    continue;
-                                } else {
-                                    println!("Too many arguments in call");
-                                    return false;
+                        let mut crt_def_args = symbol.args.as_mut().unwrap().table.iter_mut();
+                        if self.expr(&mut arg) {
+                            if let Some(crt_arg) = crt_def_args.next() {
+                                if let (Some(crt_arg_type), Some(arg_type)) = (&crt_arg.r#type, &arg.r#type) {
+                                    Parser::cast_var(crt_arg_type, arg_type);
                                 }
                             } else {
-                                break;
+                                println!("Too many arguments in call");
+                                return false;
+                            }
+
+                            loop {
+                                if self.get_token_type() == TokenType::COMMA {
+                                    self.consume();
+
+                                    if !self.expr(&mut arg) {
+                                        println!("Comma should be followed by another expression!");
+                                        self.current_token_index = start_token;
+                                        return false;
+                                    } else if let Some(crt_arg) = crt_def_args.next() {
+                                        if let (Some(crt_arg_type), Some(arg_type)) = (&crt_arg.r#type, &arg.r#type) {
+                                            Parser::cast_var(crt_arg_type, arg_type);
+                                        }
+                                        continue;
+                                    } else {
+                                        println!("Too many arguments in call");
+                                        return false;
+                                    }
+                                } else {
+                                    break;
+                                }
                             }
                         }
-                    }
 
-                    if self.get_token_type() == TokenType::RPAR {
-                        self.consume();
-                        if crt_def_args.expect("There are still elements").next().is_some() {
-                            println!("Too few arguments in call!");
+                        if self.get_token_type() == TokenType::RPAR {
+                            self.consume();
+                            if crt_def_args.next().is_some() {
+                                println!("Too few arguments in call!");
+                                return false;
+                            }
+
+                            rv.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
+                            rv.is_ctval = false;
+                            rv.is_lval = false;
+                        } else {
+                            println!("Expected ')' to close the expression!");
+                            self.current_token_index = start_token;
                             return false;
                         }
-
-                        ret_val.r#type = Some(symbol.r#type.clone().expect("symbol.r#type is None"));
-                        ret_val.is_ctval = false;
-                        ret_val.is_lval = false;
-                    } else {
-                        println!("Expected ')' to close the expression!");
-                        self.current_token_index = start_token;
+                    } else if symbol.class == Class::Func || symbol.class == Class::ExtFunc {
+                        println!("Missing call for function {}", token_name);
                         return false;
                     }
-                } else if symbol.class == Class::Func || symbol.class == Class::ExtFunc {
-                    println!("Missing call for function {}", token_name);
+                } else {
+                    println!("Undefined symbol {}", token_name);
                     return false;
                 }
 
@@ -1061,81 +1405,88 @@ impl Parser {
 
             TokenType::CT_INT => {
                 self.consume();
-                ret_val.r#type = Some(Type::new(TypeBase::Int, -1));
+                rv.r#type = Some(Type::new(TypeBase::Int, -1));
                 if let Some(token) = self.consumed_token.clone() {
                     match token.literal.parse::<i64>() {
                         Ok(number) => {
-                            ret_val.ct_val = Some(CtVal::Int(number));
+                            rv.ct_val = Some(CtVal::Int(number));
                         },
                         Err(e) => {
                             println!("Failed to parse number: {}", e);
-                            ret_val.ct_val = None;
+                            rv.ct_val = None;
                         }
                     }
                 } else {
                     println!("No token consumed");
-                    ret_val.r#type = None;
+                    rv.r#type = None;
                 }
-                ret_val.is_ctval = true;
-                ret_val.is_lval = false;
+                rv.is_ctval = true;
+                rv.is_lval = false;
 
                 return true;
             }
 
             TokenType::CT_REAL => {
                 self.consume();
-                ret_val.r#type = Some(Type::new(TypeBase::Double, -1));
+
+                rv.r#type = Some(Type::new(TypeBase::Double, -1));
                 if let Some(token) = self.consumed_token.clone() {
                     match token.literal.parse::<f64>() {
                         Ok(number) => {
-                            ret_val.ct_val = Some(CtVal::Double(number));
+                            rv.ct_val = Some(CtVal::Double(number));
                         },
                         Err(e) => {
                             println!("Failed to parse number: {}", e);
-                            ret_val.ct_val = None;
+                            rv.ct_val = None;
                         }
                     }
                 } else {
                     println!("No token consumed");
-                    ret_val.r#type = None;
+                    rv.r#type = None;
                 }
-                ret_val.is_ctval = true;
-                ret_val.is_lval = false;
+                rv.is_ctval = true;
+                rv.is_lval = false;
 
                 return true;
             }
 
             TokenType::CT_CHAR => {
                 self.consume();
-                ret_val.r#type = Some(Type::new(TypeBase::Char, -1));
+
+                rv.r#type = Some(Type::new(TypeBase::Char, -1));
                 if let Some(token) = self.consumed_token.clone() {
-                    token.literal.
                     match token.literal.parse::<char>() {
-                        Ok(number) => {
-                            ret_val.ct_val = Some(CtVal::Double(number));
+                        Ok(char_literal) => {
+                            rv.ct_val = Some(CtVal::Char(char_literal));
                         },
                         Err(e) => {
                             println!("Failed to parse number: {}", e);
-                            ret_val.ct_val = None;
+                            rv.ct_val = None;
                         }
                     }
                 } else {
                     println!("No token consumed");
-                    ret_val.r#type = None;
+                    rv.r#type = None;
                 }
-                ret_val.is_ctval = true;
-                ret_val.is_lval = false;
+                rv.is_ctval = true;
+                rv.is_lval = false;
 
                 return true;
-            }| TokenType::CT_STRING => {
+            }
+            TokenType::CT_STRING => {
                 self.consume();
+                
+                rv.r#type = Some(Type::new(TypeBase::Char, 0));
+                rv.ct_val = Some(CtVal::Str(self.consumed_token.clone().unwrap().literal));
+                rv.is_ctval = true;
+                rv.is_lval = false;
                 return true;
             }
 
             TokenType::LPAR => {
                 self.consume();
 
-                if self.expr() {
+                if self.expr(rv) {
                     if self.get_token_type() == TokenType::RPAR {
                         self.consume();
                         return true;

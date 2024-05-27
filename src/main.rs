@@ -13,7 +13,7 @@ pub mod symbols;
 fn main() -> io::Result<()>{
     let mut output_file = fs::File::create("./res/tokens.txt")?;
 
-    if let Ok(file) = File::open("./res/8.c") {
+    if let Ok(file) = File::open("./res/9.c") {
         let reader = BufReader::new(file);
         let mut lexer = Lexer::new(String::new());
         let mut tokens: Vec<Token> = Vec::new();
