@@ -2,6 +2,7 @@ use std::{fs::{self, File}, io::{self, BufRead, BufReader, Write}};
 
 use parser::parser::Parser;
 use token::token::Token;
+use vm::vm::*;
 
 use crate::{lexer::lexer::Lexer, token::token::TokenType};
 
@@ -9,6 +10,7 @@ pub mod token;
 pub mod lexer;
 pub mod parser;
 pub mod symbols;
+pub mod vm;
 
 fn main() -> io::Result<()>{
     let mut output_file = fs::File::create("./res/tokens.txt")?;
@@ -51,5 +53,15 @@ fn main() -> io::Result<()>{
         eprintln!("Failed to open the file");
     }
 
+    unsafe {
+        // let a = 10;
+        // let b = 10;
+        add_instr_i(Opcode::OPushCtI, 10);
+        add_instr_i(Opcode::OPushCtI, 5);
+        add_instr(Opcode::OAddI);
+        add_instr(Opcode::OHalt);
+
+        run(INSTRUCTIONS);
+    }
     Ok(())
 }
